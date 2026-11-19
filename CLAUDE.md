@@ -18,27 +18,30 @@ itself, so the whole app is a single process on a single port.
 | `npm run build`                   | `build:ui` (Vite → `dist/ui`) then `build:api` (tsc → `dist/api`)     |
 | `npm start`                       | Runs the built server from `dist/api/server.js`                       |
 | `npm run typecheck`               | `tsc --noEmit` against both the api and ui tsconfigs                  |
-| `npm run lint`                    | ESLint — **currently broken, see Known issue below**                  |
+| `npm run lint` / `lint:fix`       | oxlint (`--fix` to autofix)                                           |
 | `npm run format` / `format:check` | Prettier write / check                                                |
 | `npm run update:deps`             | `npx npm-check-updates`                                               |
 
 There is no test runner wired up yet.
 
-## Known issue: lint does not run
+## Linting: oxlint, not ESLint
 
-`npm run lint` fails with `typescript-eslint does not support TS 7.0`. This is deliberate, not a
-misconfiguration to "fix" by guessing:
+The linter is **oxlint** (`.oxlintrc.json`), and this is not an arbitrary preference — do not
+"restore" ESLint here. `typescript-eslint` enforces `"typescript": ">=4.8.4 <6.1.0"` with a runtime
+guard, so it throws outright against this project's `typescript@7.0.2` (the native Go port). An npm
+`overrides` entry silences the install-time peer error but cannot satisfy the runtime guard, and
+scoping the override to the `@typescript-eslint/*` packages still leaves npm rejecting the root peer
+conflict. oxlint parses TypeScript itself and declares no `typescript` peer at all, so the latest
+compiler and a working linter coexist. (Upstream: `typescript-eslint#10940`, targeting TS ≥ 7.1.)
 
-- The project uses `typescript@7.0.2` (the native Go port, current `latest`).
-- `typescript-eslint@8.73.0` declares `"typescript": ">=4.8.4 <6.1.0"` **and enforces it with a
-  runtime guard**, so it throws before linting anything.
-- `"overrides": { "typescript": "7.0.2" }` in `package.json` exists only to stop npm's peer-conflict
-  error at install time. It cannot satisfy the runtime guard — scoping the override to the
-  `@typescript-eslint/*` packages was tried and npm still rejects the root peer conflict.
+Two rules are switched off in `.oxlintrc.json` for real reasons, not to paper over findings:
 
-Upstream tracking: `typescript-eslint#10940` (support targeted at TS ≥ 7.1). Until that lands the
-real options are: pin `typescript` to `6.0.3` (inside the supported range), or replace ESLint with a
-linter that parses TS itself (e.g. oxlint). Prettier and `tsc` are unaffected and both pass.
+- `react/react-in-jsx-scope` — the project uses the modern automatic JSX transform
+  (`jsx: react-jsx`), so `React` need not be in scope.
+- `import/no-unassigned-import`, scoped to `src/ui` — `import './styles.css'` is a deliberate
+  Vite side-effect import.
+
+`oxlint-tsgolint` would add type-aware rules; it is an optional peer and is not installed.
 
 ## Architecture
 
