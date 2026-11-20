@@ -104,6 +104,24 @@ docker run -e ADMIN_PASS=secret -p 3000:3000 saas-admin-panel
 
 `HEALTHCHECK` polls `/api/health` with `node -e fetch(...)` — no curl in the Alpine image.
 
+## Secrets: `.env` is off-limits
+
+`.env` (and every `.env.*` except `.env.example`) holds real secrets and is **deliberately blocked**
+for Claude Code. Do not try to read, grep, source, copy or edit it, and do not try to work around
+the block (scripts, symlinks, alternate commands). Read `.env.example` for the variable names; if a
+real value is needed, ask the user.
+
+Two layers enforce this, both in `.claude/settings.json`:
+
+- `permissions.deny` — `Read(...)`/`Edit(...)` rules for `.env` and the usual variants. They are
+  listed explicitly because deny beats allow, so a `.env.*` deny would also hide `.env.example`.
+- `PreToolUse` hook `.claude/hooks/block-env.mjs` — checks file tools (resolving symlinks), Grep/Glob
+  paths and globs, and Bash command text, then exits 2 to block. It fails closed on unparseable input.
+
+Both are guardrails, not a security boundary: neither stops a subprocess that opens the file itself.
+OS-level enforcement would need `sandbox.filesystem.denyRead`, which is intentionally not enabled
+because `dev:api`/`start` load `.env` via `--env-file-if-exists` and would break under the sandbox.
+
 ## Editing conventions
 
 `.claude/settings.json` registers a PostToolUse hook running `prettier --write` on each file after
