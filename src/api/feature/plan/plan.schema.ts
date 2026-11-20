@@ -6,10 +6,15 @@ import { z } from 'zod';
  */
 const priceSchema = z.int().nonnegative().max(100_000_000).nullable();
 
-export const planPricesSchema = z.strictObject({
-  monthly: priceSchema,
-  yearly: priceSchema,
-});
+/** Both prices published, or both `null` (custom pricing). A half-custom plan has no meaning. */
+export const planPricesSchema = z
+  .strictObject({
+    monthly: priceSchema,
+    yearly: priceSchema,
+  })
+  .refine((prices) => (prices.monthly === null) === (prices.yearly === null), {
+    message: 'Set both prices, or neither for custom pricing',
+  });
 
 const planCodeSchema = z
   .string()
@@ -64,15 +69,22 @@ export const createPlanSchema = z.strictObject({
 
 /**
  * `PATCH /api/plans/:id`. Every field is optional, but the router rejects an empty body. `prices` is
- * replaced as a whole. `code` is deliberately absent, because it cannot change.
+ * replaced as a whole. `code` is deliberately absent, because it cannot change. Prices are stored
+ * in the currency's minor unit with no scale of their own, so a new `currency` must come with
+ * `prices`; otherwise $49.00 (4900) would silently become ¥4,900.
  */
-export const updatePlanSchema = z.strictObject({
-  name: planNameSchema.optional(),
-  description: planDescriptionSchema.optional(),
-  currency: currencySchema.optional(),
-  prices: planPricesSchema.optional(),
-  archived: z.boolean().optional(),
-});
+export const updatePlanSchema = z
+  .strictObject({
+    name: planNameSchema.optional(),
+    description: planDescriptionSchema.optional(),
+    currency: currencySchema.optional(),
+    prices: planPricesSchema.optional(),
+    archived: z.boolean().optional(),
+  })
+  .refine((body) => body.currency === undefined || body.prices !== undefined, {
+    path: ['prices'],
+    message: 'Send prices when changing currency',
+  });
 
 export type Plan = z.infer<typeof planSchema>;
 export type PlanPrices = z.infer<typeof planPricesSchema>;

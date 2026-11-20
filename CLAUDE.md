@@ -64,7 +64,9 @@ Middleware order is load-bearing — `createApp()` registers, in sequence:
 5. `express.static(config.uiDir, { index: false })` — hashed assets from `dist/ui`
 6. `spaFallback` — GET/HEAD only, serves `dist/ui/index.html` so client-side routes work
 7. `notFoundHandler` — anything left (e.g. a POST to an unknown path) is a JSON 404
-8. `errorHandler` — must keep all four params; Express detects error handlers by arity
+8. `errorHandler` — must keep all four params; Express detects error handlers by arity. Errors
+   carrying a 4xx `status` (malformed JSON → 400, oversized body → 413 from `express.json()`) are
+   answered with that status and a fixed message; everything else is a 500
 
 The production image sets `NODE_ENV=production`, so its CSP includes `upgrade-insecure-requests`.
 That is correct behind TLS. Over plain HTTP it breaks the page wherever the browser upgrades the
@@ -96,7 +98,9 @@ unknown id → 404.
 - **`plan`**: `GET /api/plans?archived=true|false` → `{ data, total }` (active before archived, then
   cheapest monthly first, custom pricing last). `GET /api/plans/:id`. `POST /api/plans` → 201.
   `PATCH /api/plans/:id` (partial; an empty body → 400; `prices` is replaced whole). Prices are
-  **integers in the currency's minor unit** (cents), with `null` meaning custom/contact-sales.
+  **integers in the currency's minor unit** (cents), with `null` meaning custom/contact-sales;
+  both prices are set or both are `null`. A `PATCH` that changes `currency` must also send `prices`,
+  since the stored integers have no scale of their own.
   `code` (`lite`, `pro`, …) is unique (duplicate → 409) and cannot change after creation. Plans are
   never deleted; `archived: true` keeps them on existing clients but blocks new attachments.
   `client.storage.ts` imports plan storage to check mock `planId`s at boot, so the dependency runs

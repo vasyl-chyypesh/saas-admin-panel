@@ -103,6 +103,10 @@ export const ClientDetailPage = (): JSX.Element => {
               }}
             >
               <option value="">No plan</option>
+              {/* Until the plan list arrives the select would otherwise show "No plan". */}
+              {client.planId !== null && !currentPlan && (
+                <option value={client.planId}>{plans.error ? 'Unknown plan' : 'Loading…'}</option>
+              )}
               {selectablePlans.map((plan) => (
                 <option key={plan.id} value={plan.id}>
                   {plan.name} · {formatPrice(plan.prices.monthly, plan.currency)}

@@ -213,7 +213,11 @@ export const ClientListPage = (): JSX.Element => {
                         <StatusBadge status={client.status} />
                       </td>
                       <td className={client.planId === null ? 'muted' : undefined}>
-                        {client.planId === null ? '—' : (planNames.get(client.planId) ?? '')}
+                        {client.planId === null
+                          ? '—'
+                          : (planNames.get(client.planId) ??
+                            // Blank while plans load; say so if they failed rather than look planless.
+                            (plans.error ? <span className="muted">Unknown plan</span> : ''))}
                       </td>
                       <td className="num muted">
                         <time dateTime={client.createdAt}>{formatDate(client.createdAt)}</time>
