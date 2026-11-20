@@ -25,7 +25,7 @@ export const isClientStatus = (value: string): value is ClientStatus =>
   Object.hasOwn(clientStatusLabels, value);
 
 export const StatusBadge = ({ status }: { status: ClientStatus }): JSX.Element => (
-  <span className={`badge badge--${status}`}>{clientStatusLabels[status]}</span>
+  <span className={`status status--${status}`}>{clientStatusLabels[status]}</span>
 );
 
 const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' });

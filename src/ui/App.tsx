@@ -16,12 +16,15 @@ const NotFoundPage = (): JSX.Element => (
 export const App = (): JSX.Element => {
   return (
     <div className="layout">
-      <header className="topbar">
-        <span className="brand">SaaS Admin</span>
-        <nav>
+      <aside className="sidebar">
+        <Link to="/clients" className="brand">
+          <span className="brand-mark" aria-hidden="true" />
+          SaaS Admin
+        </Link>
+        <nav className="nav" aria-label="Main">
           <NavLink to="/clients">Clients</NavLink>
         </nav>
-      </header>
+      </aside>
       <main className="content">
         <Routes>
           <Route path="/" element={<Navigate to="/clients" replace />} />

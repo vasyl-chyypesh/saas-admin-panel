@@ -1,4 +1,4 @@
-import { type JSX, useState } from 'react';
+import { type JSX, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigationType, useSearchParams } from 'react-router';
 import { useFetchJson } from '../../lib/api.ts';
 import {
@@ -14,6 +14,13 @@ const FILTER_NAV_STATE = { fromClientFilters: true } as const;
 
 const isFilterNavigation = (state: unknown): boolean =>
   typeof state === 'object' && state !== null && 'fromClientFilters' in state;
+
+const SKELETON_ROWS = 6;
+
+/** True when a keystroke should go to the focused element rather than to a page shortcut. */
+const isTypingTarget = (target: EventTarget | null): boolean =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 
 export const ClientListPage = (): JSX.Element => {
   // Filters live in the URL so they survive reloads and back/forward.
@@ -46,6 +53,20 @@ export const ClientListPage = (): JSX.Element => {
     `/api/clients${query ? `?${query}` : ''}`,
   );
 
+  // `/` focuses the search box from anywhere on the page, as in most keyboard-first tools.
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey || isTypingTarget(e.target)) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, []);
+
   const updateFilter = (key: 'search' | 'status', value: string): void => {
     setSearchParams(
       (prev) => {
@@ -58,76 +79,129 @@ export const ClientListPage = (): JSX.Element => {
     );
   };
 
+  const clearFilters = (): void => {
+    setSearchInput('');
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('search');
+        next.delete('status');
+        return next;
+      },
+      { replace: true, state: FILTER_NAV_STATE },
+    );
+  };
+
+  const statusTabs: { value: string; label: string }[] = [
+    { value: '', label: 'All' },
+    ...Object.entries(clientStatusLabels).map(([value, label]) => ({ value, label })),
+  ];
+
   return (
     <section>
       <title>Clients · SaaS Admin Panel</title>
       <header className="page-header">
         <h1>Clients</h1>
-        {data && <span className="muted">{data.total} total</span>}
+        {data && <span className="count">{data.total}</span>}
       </header>
 
-      <div className="filters" role="search">
-        <input
-          type="search"
-          placeholder="Search name or email"
-          aria-label="Search clients by name or email"
-          value={searchInput}
-          maxLength={100}
-          onChange={(e) => {
-            setSearchInput(e.target.value);
-            updateFilter('search', e.target.value);
-          }}
-        />
-        <select
-          aria-label="Filter by status"
-          value={status}
-          onChange={(e) => {
-            updateFilter('status', e.target.value);
-          }}
-        >
-          <option value="">All statuses</option>
-          {Object.entries(clientStatusLabels).map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
+      <div className="toolbar">
+        <div className="tabs" role="group" aria-label="Filter by status">
+          {statusTabs.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              aria-pressed={status === tab.value}
+              onClick={() => {
+                updateFilter('status', tab.value);
+              }}
+            >
+              {tab.label}
+            </button>
           ))}
-        </select>
+        </div>
+
+        <div className="search" role="search">
+          <input
+            ref={searchRef}
+            type="search"
+            placeholder="Search name or email"
+            aria-label="Search clients by name or email"
+            aria-keyshortcuts="/"
+            value={searchInput}
+            maxLength={100}
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              updateFilter('search', e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') e.currentTarget.blur();
+            }}
+          />
+          <kbd aria-hidden="true">/</kbd>
+        </div>
       </div>
 
       {error ? (
         <p className="notice notice--error">Failed to load clients: {error.message}</p>
-      ) : !data ? (
-        <p className="notice">Loading…</p>
-      ) : data.data.length === 0 ? (
-        <p className="notice">No clients match these filters.</p>
+      ) : data && data.data.length === 0 ? (
+        <div className="empty">
+          <span>No clients match these filters.</span>
+          <button type="button" className="button-ghost" onClick={clearFilters}>
+            Clear filters
+          </button>
+        </div>
       ) : (
-        <div className={`table-wrap${loading ? ' is-loading' : ''}`}>
+        <div className={`table-wrap${loading && data ? ' is-loading' : ''}`} aria-busy={loading}>
           <table>
             <thead>
               <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Email</th>
+                <th scope="col">Client</th>
                 <th scope="col">Company</th>
                 <th scope="col">Status</th>
-                <th scope="col">Created</th>
+                <th scope="col" className="num">
+                  Created
+                </th>
               </tr>
             </thead>
             <tbody>
-              {data.data.map((client) => (
-                <tr key={client.id}>
-                  <td>
-                    <Link to={`/clients/${client.id}`}>{client.name}</Link>
-                  </td>
-                  <td>{client.email}</td>
-                  <td>{client.company}</td>
-                  <td>
-                    <StatusBadge status={client.status} />
-                  </td>
-                  <td>
-                    <time dateTime={client.createdAt}>{formatDate(client.createdAt)}</time>
-                  </td>
-                </tr>
-              ))}
+              {data
+                ? data.data.map((client) => (
+                    <tr key={client.id}>
+                      <td>
+                        <div className="client-cell">
+                          <Link to={`/clients/${client.id}`} className="row-link">
+                            {client.name}
+                          </Link>
+                          <span className="muted">{client.email}</span>
+                        </div>
+                      </td>
+                      <td>{client.company}</td>
+                      <td>
+                        <StatusBadge status={client.status} />
+                      </td>
+                      <td className="num muted">
+                        <time dateTime={client.createdAt}>{formatDate(client.createdAt)}</time>
+                      </td>
+                    </tr>
+                  ))
+                : Array.from({ length: SKELETON_ROWS }, (_, i) => (
+                    <tr key={i} aria-hidden="true">
+                      <td>
+                        <span className="skeleton" style={{ width: '8rem' }} />
+                        <span className="skeleton" style={{ width: '11rem' }} />
+                      </td>
+                      <td>
+                        <span className="skeleton" style={{ width: '7rem' }} />
+                      </td>
+                      <td>
+                        <span className="skeleton" style={{ width: '4rem' }} />
+                      </td>
+                      <td>
+                        <span className="skeleton" style={{ width: '5rem', marginLeft: 'auto' }} />
+                      </td>
+                    </tr>
+                  ))}
             </tbody>
           </table>
         </div>
