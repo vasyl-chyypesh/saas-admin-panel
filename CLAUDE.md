@@ -136,6 +136,22 @@ Both are guardrails, not a security boundary: neither stops a subprocess that op
 OS-level enforcement would need `sandbox.filesystem.denyRead`, which is intentionally not enabled
 because `dev:api`/`start` load `.env` via `--env-file-if-exists` and would break under the sandbox.
 
+## Code review
+
+- **`code-reviewer` subagent** (`.claude/agents/code-reviewer.md`): a read-only reviewer for pending
+  changes. By default it reviews the diff against `main` plus uncommitted and untracked files; it can
+  also take a range or a PR number. It runs a correctness pass and a security pass and reports
+  verified findings with `file:line`. It never edits files. Its description says "use proactively",
+  so Claude may delegate to it after making changes; you can also ask for it explicitly.
+- **`appsec-review` skill** (`.claude/skills/appsec-review/SKILL.md`): the security checklist,
+  severity scale, exclusions and report format, written for this app. The subagent preloads it
+  through its `skills:` field, and you can run it directly as `/appsec-review`. Do not add
+  `disable-model-invocation: true` to it, because that stops it being preloaded. Do not rename it to
+  `security-review` or `code-review`; those names belong to built-in skills.
+
+When the app changes shape (auth middleware lands, a database is added, new env vars), update the
+"How this app is put together" section and the exclusions in the skill so the reviewer stays accurate.
+
 ## Editing conventions
 
 `.claude/settings.json` registers a PostToolUse hook running `prettier --write` on each file after
