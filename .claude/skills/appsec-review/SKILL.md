@@ -26,6 +26,11 @@ Use this checklist to review a **change** (a diff, branch or PR), not to audit t
 - Routes are mounted in `src/api/routes/index.ts`. Any router added there is public: **there is no
   auth middleware yet.** `ADMIN_PASS` (`src/api/config.ts`) is a deliberate placeholder that nothing
   consumes.
+- Feature APIs live in `src/api/feature/<name>/` (`*.router.ts`, `*.schema.ts`, `*.storage.ts`).
+  Request input is validated with **zod** `safeParse` in the router; a 400 returns
+  `z.flattenError(...).fieldErrors`. `clients` (`/api/clients`, `/api/clients/:id`) is read-only and
+  backed by an in-memory mock array, so there is no database and no injection sink yet. Client
+  records hold contact PII (name, email), which matters once auth lands.
 - Express 5 forwards rejected promises from async handlers to `errorHandler` automatically.
 - `config.nodeEnv` defaults to `'development'` when `NODE_ENV` is unset, and `errorHandler` returns
   `err.message` only in development. The Docker image sets `NODE_ENV=production`; other deploys may

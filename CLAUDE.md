@@ -57,7 +57,8 @@ Middleware order is load-bearing — `createApp()` registers, in sequence:
    `NODE_ENV=production` explicitly. If the UI starts
    loading a third-party origin (fonts, analytics, an API), add it to the matching CSP directive here.
 2. `express.json()` — request body parsing
-3. `/api` → `apiRouter` (`src/api/routes/index.ts`, mounts `health` at `/api/health`)
+3. `/api` → `apiRouter` (`src/api/routes/index.ts`, mounts `health` at `/api/health` and the
+   client feature router at `/api/clients`)
 4. `/api` → `notFoundHandler` again, so an unknown `/api/*` path returns **JSON 404** instead of
    falling through and being answered with the SPA's HTML
 5. `express.static(config.uiDir, { index: false })` — hashed assets from `dist/ui`
@@ -73,6 +74,19 @@ HTTP, run it with `-e NODE_ENV=development`.
 
 `spaFallback` deliberately calls `next()` when `dist/ui/index.html` is missing. That is the
 `dev:api`-without-a-build case, where Vite serves the UI and a 404 is the honest answer.
+
+### Feature modules (`src/api/feature/<name>/`)
+
+Each feature folder holds `<name>.router.ts` (Express router), `<name>.schema.ts` (zod schemas and
+the `z.infer` types) and `<name>.storage.ts` (data access). `client` is the first:
+`GET /api/clients?search=&status=` → `{ data, total }` (newest first; `search` matches name/email
+case-insensitively), `GET /api/clients/:id` → `{ data }`. Bad input → 400
+`{ error, details: fieldErrors }`; an unknown id → 404. The storage is an in-memory mock array that
+is run through `clientSchema` at import, so bad mock data fails at boot.
+
+The UI imports the API's types with `import type` from `client.schema.ts`. This keeps one source of
+truth, and the import is erased at build so zod never reaches the bundle. Never turn it into a value
+import.
 
 ### Config (`src/api/config.ts`)
 
@@ -100,8 +114,19 @@ to `.js` — that breaks the dev server.
 ### UI
 
 Vite's `root` is `src/ui`, so `build.outDir` is written as `../../dist/ui` (relative to root) and
-`index.html` references `/main.tsx`. `App.tsx` is an intentional placeholder rendering the single
-word "development". React 19 ships no bundled types; `@types/react` is a real dependency.
+`index.html` references `/main.tsx`. React 19 ships no bundled types; `@types/react` is a real dependency.
+
+Routing is **react-router v8 in declarative mode** (`BrowserRouter` in `main.tsx`, `<Routes>` in
+`App.tsx`): `/` redirects to `/clients`, then `/clients` and `/clients/:id`. Deep links work in
+production because of Express's `spaFallback`. Pages live in `src/ui/feature/<name>/`. Data is
+loaded with `useFetchJson` (`src/ui/lib/api.ts`), which aborts superseded requests and keeps the
+previous data while a new URL loads. Page titles use React 19's hoisted `<title>` element.
+
+The router wraps location updates in `startTransition` by default, so **never bind a text
+`<input>`'s `value` straight to `useSearchParams`**: keystrokes get dropped. `ClientListPage` keeps
+the search text in local state, writes it to the URL with a `location.state` marker, and copies the
+URL value back on navigations without that marker, and always on back/forward (`POP`), because
+history keeps `location.state` and restores the marker.
 
 ## Docker
 
