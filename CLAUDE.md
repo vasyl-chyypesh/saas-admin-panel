@@ -58,7 +58,7 @@ Middleware order is load-bearing — `createApp()` registers, in sequence:
    loading a third-party origin (fonts, analytics, an API), add it to the matching CSP directive here.
 2. `express.json()` — request body parsing
 3. `/api` → `apiRouter` (`src/api/routes/index.ts`, mounts `health` at `/api/health` and the
-   client feature router at `/api/clients`)
+   feature routers at `/api/clients` and `/api/plans`)
 4. `/api` → `notFoundHandler` again, so an unknown `/api/*` path returns **JSON 404** instead of
    falling through and being answered with the SPA's HTML
 5. `express.static(config.uiDir, { index: false })` — hashed assets from `dist/ui`
@@ -78,11 +78,32 @@ HTTP, run it with `-e NODE_ENV=development`.
 ### Feature modules (`src/api/feature/<name>/`)
 
 Each feature folder holds `<name>.router.ts` (Express router), `<name>.schema.ts` (zod schemas and
-the `z.infer` types) and `<name>.storage.ts` (data access). `client` is the first:
-`GET /api/clients?search=&status=` → `{ data, total }` (newest first; `search` matches name/email
-case-insensitively), `GET /api/clients/:id` → `{ data }`. Bad input → 400
-`{ error, details: fieldErrors }`; an unknown id → 404. The storage is an in-memory mock array that
-is run through `clientSchema` at import, so bad mock data fails at boot.
+the `z.infer` types) and `<name>.storage.ts` (data access). Storage is an in-memory mock array, run
+through the record schema at import so bad mock data fails at boot. Writes replace records in that
+array, so they last until the process restarts.
+
+Shared response helpers live in `src/api/lib/http.ts`. Bad input → 400
+`{ error, message?, details: fieldErrors }`. `message` is there only for errors on the whole body,
+such as an unknown key or a body that isn't an object. Write bodies are `z.strictObject`, so an
+unknown key is a 400 rather than silently dropped; query strings still strip unknown keys. An
+unknown id → 404.
+
+- **`client`**: `GET /api/clients?search=&status=&planId=` → `{ data, total }` (newest first;
+  `search` matches name/email case-insensitively; `planId=none` means no plan).
+  `GET /api/clients/:id` → `{ data }`. `PATCH /api/clients/:id { planId: uuid | null }` attaches or
+  detaches a plan. An unknown plan → 400; attaching an **archived** plan → 409, unless it is already
+  that client's plan (re-sending it is a no-op). It is the only writable client field.
+- **`plan`**: `GET /api/plans?archived=true|false` → `{ data, total }` (active before archived, then
+  cheapest monthly first, custom pricing last). `GET /api/plans/:id`. `POST /api/plans` → 201.
+  `PATCH /api/plans/:id` (partial; an empty body → 400; `prices` is replaced whole). Prices are
+  **integers in the currency's minor unit** (cents), with `null` meaning custom/contact-sales.
+  `code` (`lite`, `pro`, …) is unique (duplicate → 409) and cannot change after creation. Plans are
+  never deleted; `archived: true` keeps them on existing clients but blocks new attachments.
+  `client.storage.ts` imports plan storage to check mock `planId`s at boot, so the dependency runs
+  client → plan only.
+
+**The write endpoints have no auth.** This was a deliberate decision: they stay open until an
+auth layer is built, and that work should put them behind it.
 
 The UI imports the API's types with `import type` from `client.schema.ts`. This keeps one source of
 truth, and the import is erased at build so zod never reaches the bundle. Never turn it into a value
@@ -117,10 +138,14 @@ Vite's `root` is `src/ui`, so `build.outDir` is written as `../../dist/ui` (rela
 `index.html` references `/main.tsx`. React 19 ships no bundled types; `@types/react` is a real dependency.
 
 Routing is **react-router v8 in declarative mode** (`BrowserRouter` in `main.tsx`, `<Routes>` in
-`App.tsx`): `/` redirects to `/clients`, then `/clients` and `/clients/:id`. Deep links work in
+`App.tsx`): `/` redirects to `/clients`, then `/clients`, `/clients/:id`, `/plans`, `/plans/new` and
+`/plans/:id` (the plan edit form, plus the clients on that plan). Deep links work in
 production because of Express's `spaFallback`. Pages live in `src/ui/feature/<name>/`. Data is
 loaded with `useFetchJson` (`src/ui/lib/api.ts`), which aborts superseded requests and keeps the
-previous data while a new URL loads. Page titles use React 19's hoisted `<title>` element.
+previous data while a new URL loads. Writes go through `sendJson`; pages feed the returned record
+into the hook's `mutate` instead of refetching. A failed request throws `ApiError`, whose `details`
+holds the API's per-field messages for inline form errors. Plan prices are typed in major units and
+converted to minor units by string parsing, not `* 100`, so 19.99 stays exactly 1999. Page titles use React 19's hoisted `<title>` element.
 
 The router wraps location updates in `startTransition` by default, so **never bind a text
 `<input>`'s `value` straight to `useSearchParams`**: keystrokes get dropped. `ClientListPage` keeps

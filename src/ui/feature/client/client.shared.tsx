@@ -1,8 +1,12 @@
 import type { JSX } from 'react';
 // Type-only import: erased at build, so zod never reaches the UI bundle.
-import type { Client, ClientStatus } from '../../../api/feature/client/client.schema.ts';
+import type {
+  Client,
+  ClientStatus,
+  UpdateClientBody,
+} from '../../../api/feature/client/client.schema.ts';
 
-export type { Client, ClientStatus };
+export type { Client, ClientStatus, UpdateClientBody };
 
 export interface ClientListResponse {
   data: Client[];

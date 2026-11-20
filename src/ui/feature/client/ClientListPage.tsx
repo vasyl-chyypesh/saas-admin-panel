@@ -1,6 +1,7 @@
 import { type JSX, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigationType, useSearchParams } from 'react-router';
 import { useFetchJson } from '../../lib/api.ts';
+import type { PlanListResponse } from '../plan/plan.shared.tsx';
 import {
   type ClientListResponse,
   clientStatusLabels,
@@ -17,6 +18,10 @@ const isFilterNavigation = (state: unknown): boolean =>
 
 const SKELETON_ROWS = 6;
 
+/** `?plan=` is a plan id or `none`; anything else is ignored rather than sent to the API. */
+const isPlanFilter = (value: string): boolean =>
+  value === 'none' || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
 /** True when a keystroke should go to the focused element rather than to a page shortcut. */
 const isTypingTarget = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement &&
@@ -30,6 +35,8 @@ export const ClientListPage = (): JSX.Element => {
   const search = searchParams.get('search') ?? '';
   const rawStatus = searchParams.get('status') ?? '';
   const status = isClientStatus(rawStatus) ? rawStatus : '';
+  const rawPlan = searchParams.get('plan') ?? '';
+  const plan = isPlanFilter(rawPlan) ? rawPlan : '';
 
   // The search box can't be controlled by the URL directly: React Router applies location updates
   // inside `startTransition`, so the URL lags the keystrokes and React would reset the input to the
@@ -47,11 +54,14 @@ export const ClientListPage = (): JSX.Element => {
   const apiParams = new URLSearchParams();
   if (search.trim() !== '') apiParams.set('search', search.trim());
   if (status !== '') apiParams.set('status', status);
+  if (plan !== '') apiParams.set('planId', plan);
   const query = apiParams.toString();
 
   const { data, error, loading } = useFetchJson<ClientListResponse>(
     `/api/clients${query ? `?${query}` : ''}`,
   );
+  const plans = useFetchJson<PlanListResponse>('/api/plans');
+  const planNames = new Map(plans.data?.data.map((p) => [p.id, p.name]));
 
   // `/` focuses the search box from anywhere on the page, as in most keyboard-first tools.
   const searchRef = useRef<HTMLInputElement>(null);
@@ -67,7 +77,7 @@ export const ClientListPage = (): JSX.Element => {
     };
   }, []);
 
-  const updateFilter = (key: 'search' | 'status', value: string): void => {
+  const updateFilter = (key: 'search' | 'status' | 'plan', value: string): void => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
@@ -86,6 +96,7 @@ export const ClientListPage = (): JSX.Element => {
         const next = new URLSearchParams(prev);
         next.delete('search');
         next.delete('status');
+        next.delete('plan');
         return next;
       },
       { replace: true, state: FILTER_NAV_STATE },
@@ -121,24 +132,44 @@ export const ClientListPage = (): JSX.Element => {
           ))}
         </div>
 
-        <div className="search" role="search">
-          <input
-            ref={searchRef}
-            type="search"
-            placeholder="Search name or email"
-            aria-label="Search clients by name or email"
-            aria-keyshortcuts="/"
-            value={searchInput}
-            maxLength={100}
+        <div className="toolbar-end">
+          <select
+            className="input"
+            aria-label="Filter by plan"
+            value={plan}
             onChange={(e) => {
-              setSearchInput(e.target.value);
-              updateFilter('search', e.target.value);
+              updateFilter('plan', e.target.value);
             }}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') e.currentTarget.blur();
-            }}
-          />
-          <kbd aria-hidden="true">/</kbd>
+          >
+            <option value="">All plans</option>
+            <option value="none">No plan</option>
+            {plans.data?.data.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+                {p.archived ? ' (archived)' : ''}
+              </option>
+            ))}
+          </select>
+
+          <div className="search" role="search">
+            <input
+              ref={searchRef}
+              type="search"
+              placeholder="Search name or email"
+              aria-label="Search clients by name or email"
+              aria-keyshortcuts="/"
+              value={searchInput}
+              maxLength={100}
+              onChange={(e) => {
+                setSearchInput(e.target.value);
+                updateFilter('search', e.target.value);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') e.currentTarget.blur();
+              }}
+            />
+            <kbd aria-hidden="true">/</kbd>
+          </div>
         </div>
       </div>
 
@@ -159,6 +190,7 @@ export const ClientListPage = (): JSX.Element => {
                 <th scope="col">Client</th>
                 <th scope="col">Company</th>
                 <th scope="col">Status</th>
+                <th scope="col">Plan</th>
                 <th scope="col" className="num">
                   Created
                 </th>
@@ -169,7 +201,7 @@ export const ClientListPage = (): JSX.Element => {
                 ? data.data.map((client) => (
                     <tr key={client.id}>
                       <td>
-                        <div className="client-cell">
+                        <div className="cell-stack">
                           <Link to={`/clients/${client.id}`} className="row-link">
                             {client.name}
                           </Link>
@@ -179,6 +211,9 @@ export const ClientListPage = (): JSX.Element => {
                       <td>{client.company}</td>
                       <td>
                         <StatusBadge status={client.status} />
+                      </td>
+                      <td className={client.planId === null ? 'muted' : undefined}>
+                        {client.planId === null ? '—' : (planNames.get(client.planId) ?? '')}
                       </td>
                       <td className="num muted">
                         <time dateTime={client.createdAt}>{formatDate(client.createdAt)}</time>
@@ -193,6 +228,9 @@ export const ClientListPage = (): JSX.Element => {
                       </td>
                       <td>
                         <span className="skeleton" style={{ width: '7rem' }} />
+                      </td>
+                      <td>
+                        <span className="skeleton" style={{ width: '4rem' }} />
                       </td>
                       <td>
                         <span className="skeleton" style={{ width: '4rem' }} />

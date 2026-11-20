@@ -1,13 +1,18 @@
+import { getPlanById } from '../plan/plan.storage.ts';
 import { type Client, clientSchema, type ListClientsQuery } from './client.schema.ts';
 
-/** In-memory mock data until a real database exists. Parsed at import so a typo fails at boot. */
-const clients: readonly Client[] = clientSchema.array().parse([
+/**
+ * In-memory mock data until a real database exists. Parsed at import so a typo fails at boot.
+ * Writes change this array, so they last until the process restarts.
+ */
+const clients: Client[] = clientSchema.array().parse([
   {
     id: '38fabbe4-f262-445e-9e5f-ff5dc49744ca',
     name: 'Olivia Bennett',
     email: 'olivia.bennett@northwind.io',
     company: 'Northwind Analytics',
     status: 'active',
+    planId: 'c1e964af-952e-49cb-b6fe-4eeab545542b',
     createdAt: '2025-03-14T09:21:00.000Z',
     updatedAt: '2026-10-02T16:45:00.000Z',
   },
@@ -17,6 +22,7 @@ const clients: readonly Client[] = clientSchema.array().parse([
     email: 'marcus@brightpath.dev',
     company: 'BrightPath Labs',
     status: 'trial',
+    planId: '4d5e4056-7b48-40e1-b9a8-ac89742caf67',
     createdAt: '2026-11-05T13:02:00.000Z',
     updatedAt: '2026-11-12T08:10:00.000Z',
   },
@@ -26,6 +32,7 @@ const clients: readonly Client[] = clientSchema.array().parse([
     email: 'sofia.martinez@lumencraft.com',
     company: 'Lumencraft',
     status: 'active',
+    planId: '7adb0946-f786-4434-bdf1-221b0a104fff',
     createdAt: '2024-11-28T17:40:00.000Z',
     updatedAt: '2026-09-19T11:05:00.000Z',
   },
@@ -35,6 +42,7 @@ const clients: readonly Client[] = clientSchema.array().parse([
     email: 'd.okafor@harborfreight.co',
     company: 'Harbor Freight Co.',
     status: 'suspended',
+    planId: 'c1e964af-952e-49cb-b6fe-4eeab545542b',
     createdAt: '2025-07-02T07:15:00.000Z',
     updatedAt: '2026-08-30T19:22:00.000Z',
   },
@@ -44,6 +52,7 @@ const clients: readonly Client[] = clientSchema.array().parse([
     email: 'hannah@quillstack.de',
     company: 'Quillstack GmbH',
     status: 'churned',
+    planId: null,
     createdAt: '2024-06-10T10:00:00.000Z',
     updatedAt: '2026-02-14T14:30:00.000Z',
   },
@@ -53,6 +62,7 @@ const clients: readonly Client[] = clientSchema.array().parse([
     email: 'kenji.watanabe@orbitly.jp',
     company: 'Orbitly',
     status: 'active',
+    planId: '854148f1-0ab5-4a53-a56a-1d2fa4d43cc1',
     createdAt: '2025-12-01T02:48:00.000Z',
     updatedAt: '2026-11-18T05:12:00.000Z',
   },
@@ -62,17 +72,28 @@ const clients: readonly Client[] = clientSchema.array().parse([
     email: 'priya.raman@greenleafhealth.org',
     company: 'Greenleaf Health',
     status: 'trial',
+    planId: 'c1e964af-952e-49cb-b6fe-4eeab545542b',
     createdAt: '2026-11-15T15:30:00.000Z',
     updatedAt: '2026-11-15T15:30:00.000Z',
   },
 ]);
 
-/** Newest first. `search` matches name or email, case-insensitively. */
-export const listClients = ({ search, status }: ListClientsQuery = {}): Client[] => {
+// A mock planId that points nowhere is bad mock data too, so it fails at boot as well.
+for (const client of clients) {
+  if (client.planId !== null && !getPlanById(client.planId)) {
+    throw new Error(`Mock client ${client.id} references unknown plan ${client.planId}`);
+  }
+}
+
+/** Newest first. `search` matches name or email, case-insensitively. `planId: 'none'` = no plan. */
+export const listClients = ({ search, status, planId }: ListClientsQuery = {}): Client[] => {
   const needle = search?.toLowerCase();
 
   return clients
     .filter((client) => status === undefined || client.status === status)
+    .filter(
+      (client) => planId === undefined || client.planId === (planId === 'none' ? null : planId),
+    )
     .filter(
       (client) =>
         needle === undefined ||
@@ -84,3 +105,17 @@ export const listClients = ({ search, status }: ListClientsQuery = {}): Client[]
 
 export const getClientById = (id: string): Client | undefined =>
   clients.find((client) => client.id === id);
+
+/**
+ * Attaches a plan (or detaches with `null`) and bumps `updatedAt`. Returns `undefined` for an
+ * unknown client. Checking that the plan exists and may be attached is the caller's job.
+ */
+export const setClientPlan = (id: string, planId: string | null): Client | undefined => {
+  const index = clients.findIndex((client) => client.id === id);
+  const current = clients[index];
+  if (!current) return undefined;
+
+  const updated: Client = { ...current, planId, updatedAt: new Date().toISOString() };
+  clients[index] = updated;
+  return updated;
+};

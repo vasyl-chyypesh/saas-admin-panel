@@ -28,9 +28,14 @@ Use this checklist to review a **change** (a diff, branch or PR), not to audit t
   consumes.
 - Feature APIs live in `src/api/feature/<name>/` (`*.router.ts`, `*.schema.ts`, `*.storage.ts`).
   Request input is validated with **zod** `safeParse` in the router; a 400 returns
-  `z.flattenError(...).fieldErrors`. `clients` (`/api/clients`, `/api/clients/:id`) is read-only and
-  backed by an in-memory mock array, so there is no database and no injection sink yet. Client
-  records hold contact PII (name, email), which matters once auth lands.
+  `z.flattenError(...).fieldErrors` (plus `message` for whole-body errors), via the helpers in
+  `src/api/lib/http.ts`. Write bodies use `z.strictObject`, so unknown keys are rejected.
+- `clients` (`GET /api/clients`, `GET|PATCH /api/clients/:id`) and `plans`
+  (`GET|POST /api/plans`, `GET|PATCH /api/plans/:id`) are backed by in-memory mock arrays, so there
+  is no database and no injection sink yet. Writes replace records in those arrays and last until
+  restart. `PATCH /api/clients/:id` only changes `planId`. Client records hold contact PII (name,
+  email), which matters once auth lands.
+- **The write endpoints are unauthenticated by decision**, until an auth layer is built.
 - Express 5 forwards rejected promises from async handlers to `errorHandler` automatically.
 - `config.nodeEnv` defaults to `'development'` when `NODE_ENV` is unset, and `errorHandler` returns
   `err.message` only in development. The Docker image sets `NODE_ENV=production`; other deploys may
@@ -145,8 +150,10 @@ Use this checklist to review a **change** (a diff, branch or PR), not to audit t
 - Style, naming or formatting issues. Prettier and oxlint handle them.
 - Theoretical issues with no reachable input path in the current code.
 - Test-only code and fixtures, unless they ship in the build.
-- The unused `ADMIN_PASS` placeholder or the missing auth layer on `/api/health`. Both are
-  documented as intentional.
+- The unused `ADMIN_PASS` placeholder, or the missing auth layer on `/api/health`, the
+  `clients` and `plans` reads, and the `POST`/`PATCH` endpoints listed above. All of these are
+  documented as intentional until auth lands. A _new_ unauthenticated write endpoint still gets a
+  design note.
 - `.ts` extensions in relative imports under `src/api`. They are intentional (see CLAUDE.md).
 - Denial of service through sheer request volume. Rate limiting matters only on auth endpoints.
 

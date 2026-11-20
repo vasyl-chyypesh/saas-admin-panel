@@ -1,13 +1,37 @@
-import type { JSX } from 'react';
+import { type JSX, useId, useState } from 'react';
 import { Link, useParams } from 'react-router';
-import { useFetchJson } from '../../lib/api.ts';
-import { type ClientResponse, formatDateTime, StatusBadge } from './client.shared.tsx';
+import { type ApiError, sendJson, toApiError, useFetchJson } from '../../lib/api.ts';
+import { formatPrice, type PlanListResponse } from '../plan/plan.shared.tsx';
+import {
+  type ClientResponse,
+  formatDateTime,
+  StatusBadge,
+  type UpdateClientBody,
+} from './client.shared.tsx';
 
 export const ClientDetailPage = (): JSX.Element => {
   const { id = '' } = useParams();
-  const { data, error, loading } = useFetchJson<ClientResponse>(
-    `/api/clients/${encodeURIComponent(id)}`,
-  );
+  const url = `/api/clients/${encodeURIComponent(id)}`;
+  const { data, error, loading, mutate } = useFetchJson<ClientResponse>(url);
+  const plans = useFetchJson<PlanListResponse>('/api/plans');
+  const planSelectId = useId();
+
+  /** The plan picked while its PATCH is in flight, so the select doesn't snap back meanwhile. */
+  const [pendingPlanId, setPendingPlanId] = useState<string | null>();
+  const [planError, setPlanError] = useState<ApiError>();
+
+  const changePlan = async (planId: string | null): Promise<void> => {
+    setPendingPlanId(planId);
+    setPlanError(undefined);
+    try {
+      const body: UpdateClientBody = { planId };
+      mutate(await sendJson<ClientResponse>('PATCH', url, body));
+    } catch (err) {
+      setPlanError(toApiError(err));
+    } finally {
+      setPendingPlanId(undefined);
+    }
+  };
 
   const backLink = (
     <Link to="/clients" className="back-link">
@@ -40,6 +64,12 @@ export const ClientDetailPage = (): JSX.Element => {
   }
 
   const client = data.data;
+  const allPlans = plans.data?.data ?? [];
+  const currentPlan = allPlans.find((plan) => plan.id === client.planId);
+  // Archived plans can't be attached, but the client's own archived plan must still be selectable.
+  const selectablePlans = allPlans.filter((plan) => !plan.archived || plan.id === client.planId);
+  const saving = pendingPlanId !== undefined;
+  const selectedPlanId = (saving ? pendingPlanId : client.planId) ?? '';
 
   return (
     <section>
@@ -57,6 +87,38 @@ export const ClientDetailPage = (): JSX.Element => {
         </dd>
         <dt>Company</dt>
         <dd>{client.company}</dd>
+        <dt>
+          <label htmlFor={planSelectId}>Plan</label>
+        </dt>
+        <dd>
+          <div className="inline-field">
+            <select
+              id={planSelectId}
+              className="input"
+              value={selectedPlanId}
+              disabled={saving || !plans.data}
+              aria-invalid={planError !== undefined}
+              onChange={(e) => {
+                void changePlan(e.target.value === '' ? null : e.target.value);
+              }}
+            >
+              <option value="">No plan</option>
+              {selectablePlans.map((plan) => (
+                <option key={plan.id} value={plan.id}>
+                  {plan.name} · {formatPrice(plan.prices.monthly, plan.currency)}
+                  {plan.prices.monthly === null ? '' : '/mo'}
+                  {plan.archived ? ' (archived)' : ''}
+                </option>
+              ))}
+            </select>
+            {currentPlan && !saving && <Link to={`/plans/${currentPlan.id}`}>View plan</Link>}
+            {saving && <span className="muted">Saving…</span>}
+          </div>
+          {plans.error && (
+            <span className="field-error">Failed to load plans: {plans.error.message}</span>
+          )}
+          {planError && <span className="field-error">{planError.message}</span>}
+        </dd>
         <dt>Created</dt>
         <dd>
           <time dateTime={client.createdAt}>{formatDateTime(client.createdAt)}</time>
