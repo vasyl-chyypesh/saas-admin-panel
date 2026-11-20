@@ -17,12 +17,14 @@ itself, so the whole app is a single process on a single port.
 | `npm run dev:ui`                  | Vite dev server on :5173, proxying `/api` → :3000                     |
 | `npm run build`                   | `build:ui` (Vite → `dist/ui`) then `build:api` (tsc → `dist/api`)     |
 | `npm start`                       | Runs the built server from `dist/api/server.js`                       |
-| `npm run typecheck`               | `tsc --noEmit` against both the api and ui tsconfigs                  |
+| `npm run typecheck`               | `tsc --noEmit` against the api, ui and test tsconfigs                 |
+| `npm test`                        | `node --test` over `test/**/*.test.ts` (API only, see Testing)        |
+| `npm run test:coverage`           | `c8 npm test`: summary in the terminal, HTML in `coverage/index.html` |
 | `npm run lint` / `lint:fix`       | oxlint (`--fix` to autofix)                                           |
 | `npm run format` / `format:check` | Prettier write / check                                                |
 | `npm run update:deps`             | `npx npm-check-updates`                                               |
 
-There is no test runner wired up yet.
+Run one file with `node --test test/api/plans.api.test.ts`.
 
 ## Linting: oxlint, not ESLint
 
@@ -204,11 +206,13 @@ the `if-exists` variant matters because the Docker image has no `.env` and gets 
 
 ### TypeScript layout
 
-Three configs, because the two halves need different libs and module modes:
+Four configs, because the two halves need different libs and module modes:
 
 - `tsconfig.base.json` — shared strictness (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, …)
 - `tsconfig.api.json` — `nodenext`, `types: ["node"]`, emits to `dist/api`
 - `tsconfig.ui.json` — `preserve`/`bundler`, DOM libs, `jsx: react-jsx`, `noEmit`
+- `tsconfig.test.json` — like the api config but `noEmit`, over `test/**/*.ts`; tests never reach
+  `dist/` or the Docker image (`.dockerignore` drops `test/`)
 
 Relative imports inside `src/api` are written with **`.ts` extensions** (`./config.ts`). This is
 intentional: `allowImportingTsExtensions` + `rewriteRelativeImportExtensions` let Node run the
@@ -241,6 +245,39 @@ The router wraps location updates in `startTransition` by default, so **never bi
 the search text in local state, writes it to the URL with a `location.state` marker, and copies the
 URL value back on navigations without that marker, and always on back/forward (`POP`), because
 history keeps `location.state` and restores the marker.
+
+## Testing
+
+API only, with Node's built-in `node:test` and `node:assert/strict`; HTTP tests use `supertest`
+against `createApp()` (no port is opened). Node runs the `.ts` files directly, like `dev:api`.
+Coverage is `c8` (`.c8rc.json`): all of `src/api` except `server.ts`, reporters `text-summary` and
+`html`, and **no thresholds** for now. There is no UI test setup.
+
+```
+test/
+  helpers/   env.ts (setTestEnv, loadApp), oncade.ts (mockOncade, oncadeInvoice, ONCADE),
+             fixtures.ts (mock plan/client ids), console.ts (captureConsole)
+  unit/      config, lib/http, middleware/error-handler, each service, invoice.oncade
+  api/       one file per router, plus app (production) and development-mode checks
+```
+
+Production code has **no test seams**, and the tests rely on that staying workable:
+
+- **One process per file** (`--test-isolation=process`, set explicitly in the script). `config` is
+  read once, at import, so a file calls `setTestEnv({...})` / `loadApp({...})` **before** importing
+  anything that reaches `config.ts`, then uses `await import(...)`. Static imports are hoisted and
+  would load config first. Needing a different environment (Oncade on vs off, production vs
+  development) means a separate file. `setTestEnv` sets or deletes every variable config reads, so
+  the shell's environment never leaks in, and tests never load `.env`.
+- `config.test.ts` re-evaluates config per case by importing `config.ts?load=N` (a new module URL).
+- **Oncade is stubbed by mocking `fetch`** with `mockOncade(t, { 'GET /invoices/inv_1': reply })`,
+  keyed on the path below `/api/v1/platform`. A request it does not expect fails the test when it
+  ends, so no test can reach the network. supertest uses `node:http`, not `fetch`, so it is not
+  affected. Do not reach for `mock.module` (experimental flag) unless this stops being enough.
+- **In-memory storage is shared by the tests in a file.** Create plans with `uniquePlanCode()`,
+  restore any client whose plan you change, and assert on known ids rather than list counts.
+- `captureConsole()` silences and records `console.error`/`warn`; Oncade tests use it to check the
+  API key and client PII never reach a log line.
 
 ## Docker
 

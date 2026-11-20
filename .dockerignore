@@ -5,3 +5,5 @@ dist
 *.log
 Dockerfile
 .dockerignore
+test
+coverage

@@ -5,17 +5,17 @@
     "correctness": "error",
     "suspicious": "warn"
   },
-  "ignorePatterns": ["dist/**", "node_modules/**"],
+  "ignorePatterns": ["dist/**", "node_modules/**", "coverage/**"],
   "rules": {
     "react/react-in-jsx-scope": "off"
   },
   "overrides": [
     {
-      "files": ["src/api/**/*.ts", "vite.config.ts"],
+      "files": ["src/api/**/*.ts", "test/**/*.ts", "vite.config.ts"],
       "env": { "node": true }
     },
     {
-      "files": ["src/api/**/*.ts"],
+      "files": ["src/api/**/*.ts", "test/**/*.ts"],
       "rules": {
         "oxc/no-async-endpoint-handlers": "off",
         "no-underscore-dangle": ["warn", { "allow": ["_id"] }]

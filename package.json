@@ -25,7 +25,9 @@
     "build:ui": "vite build",
     "build:api": "tsc -p tsconfig.api.json",
     "start": "node --env-file-if-exists=.env dist/api/server.js",
-    "typecheck": "tsc -p tsconfig.api.json --noEmit && tsc -p tsconfig.ui.json --noEmit",
+    "typecheck": "tsc -p tsconfig.api.json --noEmit && tsc -p tsconfig.ui.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "node --test --test-isolation=process \"test/**/*.test.ts\"",
+    "test:coverage": "c8 npm test",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "format": "prettier --write .",
@@ -46,9 +48,12 @@
     "@types/node": "26.6.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "@types/supertest": "7.2.1",
     "@vitejs/plugin-react": "6.3.0",
+    "c8": "12.0.0",
     "oxlint": "1.94.0",
     "prettier": "3.10.1",
+    "supertest": "7.3.2",
     "typescript": "7.0.2",
     "vite": "8.3.8"
   }

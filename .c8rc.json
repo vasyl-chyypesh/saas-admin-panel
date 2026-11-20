@@ -1,0 +1,7 @@
+{
+  "all": true,
+  "include": ["src/api/**/*.ts"],
+  "exclude": ["src/api/server.ts"],
+  "reporter": ["text-summary", "html"],
+  "reports-dir": "coverage"
+}
