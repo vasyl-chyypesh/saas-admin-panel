@@ -1,4 +1,5 @@
 import express, { type Express } from 'express';
+import helmet from 'helmet';
 import { config } from './config.ts';
 import { errorHandler } from './middleware/error-handler.ts';
 import { notFoundHandler } from './middleware/not-found.ts';
@@ -9,6 +10,20 @@ export const createApp = (): Express => {
   const app = express();
 
   app.disable('x-powered-by');
+
+  // Security headers first, so every response (API, static assets, SPA, 404s, errors) carries them.
+  // Helmet's default CSP fits the Vite build (no inline scripts). `upgrade-insecure-requests` is
+  // dropped in development because Safari would otherwise upgrade http://localhost to https.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          'upgrade-insecure-requests': config.nodeEnv === 'development' ? null : [],
+        },
+      },
+    }),
+  );
+
   app.use(express.json());
 
   // JSON API.

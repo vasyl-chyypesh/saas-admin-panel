@@ -49,13 +49,27 @@ Two rules are switched off in `.oxlintrc.json` for real reasons, not to paper ov
 
 Middleware order is load-bearing — `createApp()` registers, in sequence:
 
-1. `/api` → `apiRouter` (`src/api/routes/index.ts`, mounts `health` at `/api/health`)
-2. `/api` → `notFoundHandler` again, so an unknown `/api/*` path returns **JSON 404** instead of
+1. `helmet()` — security headers (CSP, HSTS, `nosniff`, frame/COOP/CORP, `Referrer-Policy`) on
+   every response, so it must stay first. It uses helmet's default CSP, which suits the Vite build
+   because that build has no inline scripts. `upgrade-insecure-requests` is dropped when
+   `NODE_ENV` is `development` **or unset**, because `config.nodeEnv` defaults to `development`
+   (Safari would otherwise upgrade `http://localhost` to https). Deploys outside Docker must set
+   `NODE_ENV=production` explicitly. If the UI starts
+   loading a third-party origin (fonts, analytics, an API), add it to the matching CSP directive here.
+2. `express.json()` — request body parsing
+3. `/api` → `apiRouter` (`src/api/routes/index.ts`, mounts `health` at `/api/health`)
+4. `/api` → `notFoundHandler` again, so an unknown `/api/*` path returns **JSON 404** instead of
    falling through and being answered with the SPA's HTML
-3. `express.static(config.uiDir, { index: false })` — hashed assets from `dist/ui`
-4. `spaFallback` — GET/HEAD only, serves `dist/ui/index.html` so client-side routes work
-5. `notFoundHandler` — anything left (e.g. a POST to an unknown path) is a JSON 404
-6. `errorHandler` — must keep all four params; Express detects error handlers by arity
+5. `express.static(config.uiDir, { index: false })` — hashed assets from `dist/ui`
+6. `spaFallback` — GET/HEAD only, serves `dist/ui/index.html` so client-side routes work
+7. `notFoundHandler` — anything left (e.g. a POST to an unknown path) is a JSON 404
+8. `errorHandler` — must keep all four params; Express detects error handlers by arity
+
+The production image sets `NODE_ENV=production`, so its CSP includes `upgrade-insecure-requests`.
+That is correct behind TLS. Over plain HTTP it breaks the page wherever the browser upgrades the
+asset requests to https: Safari does this even on `localhost`, and every browser does it for a LAN
+IP or hostname. Chrome and Firefox leave `http://localhost` alone. To test the container over plain
+HTTP, run it with `-e NODE_ENV=development`.
 
 `spaFallback` deliberately calls `next()` when `dist/ui/index.html` is missing. That is the
 `dev:api`-without-a-build case, where Vite serves the UI and a 404 is the honest answer.
