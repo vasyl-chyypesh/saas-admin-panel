@@ -2,7 +2,8 @@ import type { JSX } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { useFetchJson } from '../../lib/api.ts';
 import { formatDate } from '../client/client.shared.tsx';
-import { formatPrice, type PlanListResponse, PlanStatus } from './plan.shared.tsx';
+import { formatPrice } from '../../lib/money.ts';
+import { type PlanListResponse, PlanStatus } from './plan.shared.tsx';
 
 const archivedTabs = [
   { value: '', label: 'All' },

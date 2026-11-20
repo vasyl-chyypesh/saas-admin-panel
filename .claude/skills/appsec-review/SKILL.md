@@ -24,17 +24,40 @@ Use this checklist to review a **change** (a diff, branch or PR), not to audit t
   `src/api/app.ts` is load-bearing: `helmet()` → `express.json()` → `apiRouter` → `/api` JSON 404 → `express.static(dist/ui)` →
   `spaFallback` → `notFoundHandler` → `errorHandler`.
 - Routes are mounted in `src/api/routes/index.ts`. Any router added there is public: **there is no
-  auth middleware yet.** `ADMIN_PASS` (`src/api/config.ts`) is a deliberate placeholder that nothing
-  consumes.
-- Feature APIs live in `src/api/feature/<name>/` (`*.router.ts`, `*.schema.ts`, `*.storage.ts`).
-  Request input is validated with **zod** `safeParse` in the router; a 400 returns
-  `z.flattenError(...).fieldErrors` (plus `message` for whole-body errors), via the helpers in
-  `src/api/lib/http.ts`. Write bodies use `z.strictObject`, so unknown keys are rejected.
+  auth middleware yet**, and no auth secret in `src/api/config.ts` (the old `ADMIN_PASS`
+  placeholder was dropped on purpose).
+- `config.oncade` (`src/api/config.ts`) holds the optional Oncade platform API key and business ID
+  (`undefined` when both are unset). Only the invoice module (`invoice.service.ts`, `invoice.oncade.ts`) uses it. The key is a server-side secret: it
+  must never reach the UI bundle, a response body, a log line or an error message.
+- Feature APIs live in `src/api/feature/<name>/` (`*.router.ts`, `*.service.ts`, `*.schema.ts`,
+  `*.storage.ts`). The router validates request input with **zod** through `parseOrThrow`
+  (`src/api/lib/http.ts`) and holds no business rules. The service holds the rules and throws
+  `AppError` (`src/api/lib/errors.ts`). Both errors reach `errorHandler`, which answers them before
+  its generic 4xx/500 branches. A 400 returns `z.flattenError(...).fieldErrors` (plus `message` for
+  whole-body errors). `AppError` messages go to the client verbatim, so they must never quote a
+  secret or an upstream body beyond Oncade's short, capped message. Write bodies use
+  `z.strictObject`, so unknown keys are rejected.
 - `clients` (`GET /api/clients`, `GET|PATCH /api/clients/:id`) and `plans`
   (`GET|POST /api/plans`, `GET|PATCH /api/plans/:id`) are backed by in-memory mock arrays, so there
   is no database and no injection sink yet. Writes replace records in those arrays and last until
   restart. `PATCH /api/clients/:id` only changes `planId`. Client records hold contact PII (name,
   email), which matters once auth lands.
+- `invoices` (`GET /api/invoices`, `GET /api/invoices/config`, `GET /api/invoices/:id`,
+  `POST /api/invoices`, `POST /api/invoices/:id/send|cancel`) proxy to Oncade over HTTPS
+  (`src/api/feature/invoice/invoice.oncade.ts`). This is the app's only **outbound** call. It also
+  has real-world side effects: `send` makes Oncade email the client. Things to check:
+  - **Recipient:** it must keep coming from the client record, never the request body.
+  - **Path safety:** invoice ids must stay regex-limited before they reach the outbound path.
+  - **Idempotency:** writes must keep requiring an `Idempotency-Key`.
+  - **Payment link:** `payUrl` must stay https-only, because it becomes an `href`.
+  - **Logging:** Oncade response bodies hold client PII and must not be logged; only the shape
+    errors are. Fetch failures log only the error name and system code, because some fetch error
+    messages can quote a header value, and one header holds the key.
+  - **Read exposure (known, deferred to auth):** the open `GET /api/invoices` and
+    `GET /api/invoices/:id` return **every** invoice of the Oncade business in the key's
+    environment. That includes invoices made in the Oncade dashboard for people who aren't clients
+    here, with their names, emails and live payment links. This is broader than the existing client
+    PII exposure. List it as a priority when auth lands, but don't report it before then.
 - **The write endpoints are unauthenticated by decision**, until an auth layer is built.
 - Express 5 forwards rejected promises from async handlers to `errorHandler` automatically.
 - `config.nodeEnv` defaults to `'development'` when `NODE_ENV` is unset, and `errorHandler` returns
@@ -65,7 +88,7 @@ Use this checklist to review a **change** (a diff, branch or PR), not to audit t
   actions.
 - Once auth exists, check that new routes are mounted **behind** it and do not bypass it through
   router order.
-- Comparing secrets (`ADMIN_PASS`, tokens, HMACs) with `===` / `!==` instead of
+- Comparing secrets (passwords, tokens, HMACs) with `===` / `!==` instead of
   `crypto.timingSafeEqual` on equal-length buffers.
 - Sessions and cookies: missing `httpOnly`, `secure` or `sameSite`; session IDs or tokens in URLs;
   JWTs verified without pinning the algorithm, or decoded instead of verified.
@@ -150,8 +173,9 @@ Use this checklist to review a **change** (a diff, branch or PR), not to audit t
 - Style, naming or formatting issues. Prettier and oxlint handle them.
 - Theoretical issues with no reachable input path in the current code.
 - Test-only code and fixtures, unless they ship in the build.
-- The unused `ADMIN_PASS` placeholder, or the missing auth layer on `/api/health`, the
-  `clients` and `plans` reads, and the `POST`/`PATCH` endpoints listed above. All of these are
+- The missing auth layer (and the absence of any auth secret in config) on `/api/health`, the
+  `clients`, `plans` and `invoices` reads, and the `POST`/`PATCH` endpoints listed above
+  (including the invoice create, send and cancel routes). All of these are
   documented as intentional until auth lands. A _new_ unauthenticated write endpoint still gets a
   design note.
 - `.ts` extensions in relative imports under `src/api`. They are intentional (see CLAUDE.md).

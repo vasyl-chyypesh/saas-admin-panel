@@ -1,13 +1,14 @@
 import { type FormEvent, type JSX, useId, useState } from 'react';
 import { type ApiError, type FieldErrors, toApiError } from '../../lib/api.ts';
-import { minorUnitDigits, type Plan, type PlanPrices } from './plan.shared.tsx';
+import { minorUnitDigits, parseAmount, toAmountInput } from '../../lib/money.ts';
+import type { Plan, PlanPrices } from './plan.shared.tsx';
 
 /** Everything the form edits; the page picks the fields its request accepts. */
 export interface PlanDraft {
   code: string;
   name: string;
   description: string;
-  currency: string;
+  currency: Plan['currency'];
   prices: PlanPrices;
   archived: boolean;
 }
@@ -16,7 +17,7 @@ interface FormValues {
   code: string;
   name: string;
   description: string;
-  currency: string;
+  currency: Plan['currency'];
   /** Prices as typed, in major units ("49.00"). */
   monthly: string;
   yearly: string;
@@ -25,12 +26,6 @@ interface FormValues {
   archived: boolean;
 }
 
-const toInput = (amount: number | null, currency: string): string => {
-  if (amount === null) return '';
-  const digits = minorUnitDigits(currency);
-  return (amount / 10 ** digits).toFixed(digits);
-};
-
 const toFormValues = (plan: Plan | undefined): FormValues =>
   plan
     ? {
@@ -38,8 +33,8 @@ const toFormValues = (plan: Plan | undefined): FormValues =>
         name: plan.name,
         description: plan.description,
         currency: plan.currency,
-        monthly: toInput(plan.prices.monthly, plan.currency),
-        yearly: toInput(plan.prices.yearly, plan.currency),
+        monthly: toAmountInput(plan.prices.monthly, plan.currency),
+        yearly: toAmountInput(plan.prices.yearly, plan.currency),
         customPricing: plan.prices.monthly === null && plan.prices.yearly === null,
         archived: plan.archived,
       }
@@ -53,19 +48,6 @@ const toFormValues = (plan: Plan | undefined): FormValues =>
         customPricing: false,
         archived: false,
       };
-
-/**
- * "49.9" → 4990 for USD. Parsed as strings rather than with `Number(x) * 100`, which would turn
- * 19.99 into 1998.9999…. Returns `undefined` for anything that isn't a plain non-negative amount.
- */
-const parsePrice = (raw: string, currency: string): number | undefined => {
-  const digits = minorUnitDigits(currency);
-  const value = raw.trim();
-  const pattern = digits === 0 ? /^\d+$/ : new RegExp(`^\\d+(?:\\.\\d{1,${digits}})?$`);
-  if (!pattern.test(value)) return undefined;
-  const [whole = '0', fraction = ''] = value.split('.');
-  return Number(whole) * 10 ** digits + Number(fraction.padEnd(digits, '0') || '0');
-};
 
 interface PlanFormProps {
   /** The plan being edited, or `undefined` when creating one. */
@@ -115,8 +97,8 @@ export const PlanForm = ({ plan, submitLabel, onSubmit }: PlanFormProps): JSX.El
     const errors: FieldErrors = {};
     let prices: PlanPrices = { monthly: null, yearly: null };
     if (!values.customPricing) {
-      const monthly = parsePrice(values.monthly, values.currency);
-      const yearly = parsePrice(values.yearly, values.currency);
+      const monthly = parseAmount(values.monthly, values.currency);
+      const yearly = parseAmount(values.yearly, values.currency);
       if (monthly === undefined || yearly === undefined) {
         errors['prices'] =
           minorUnitDigits(values.currency) === 0
@@ -225,13 +207,10 @@ export const PlanForm = ({ plan, submitLabel, onSubmit }: PlanFormProps): JSX.El
               {...fieldProps('currency')}
               className="input input--mono"
               value={values.currency}
-              maxLength={3}
-              spellCheck={false}
-              onChange={(e) => {
-                set('currency', e.target.value.toUpperCase());
-              }}
+              readOnly
             />
             {fieldError('currency')}
+            <span className="hint">Invoices are billed in USD only.</span>
           </div>
           <div className="field">
             <label htmlFor={`${id}-monthly`}>Monthly</label>

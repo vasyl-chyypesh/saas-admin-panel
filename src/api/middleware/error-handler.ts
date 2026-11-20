@@ -1,6 +1,7 @@
 import { STATUS_CODES } from 'node:http';
 import type { NextFunction, Request, Response } from 'express';
 import { config } from '../config.ts';
+import { sendKnownError } from '../lib/http.ts';
 
 /** Fixed messages for the body parser's client errors, so its own wording never reaches clients. */
 const clientErrorMessages: Partial<Record<string, string>> = {
@@ -31,6 +32,10 @@ export const errorHandler = (
     next(err);
     return;
   }
+
+  // Expected failures thrown by routes and services. Checked first: the 4xx branch below would
+  // swallow the message of any error that happens to carry a `status`.
+  if (sendKnownError(res, err)) return;
 
   const status = clientErrorStatus(err);
   if (status !== undefined) {

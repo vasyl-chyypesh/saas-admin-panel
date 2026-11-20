@@ -15,6 +15,13 @@
       "env": { "node": true }
     },
     {
+      "files": ["src/api/**/*.ts"],
+      "rules": {
+        "oxc/no-async-endpoint-handlers": "off",
+        "no-underscore-dangle": ["warn", { "allow": ["_id"] }]
+      }
+    },
+    {
       "files": ["src/ui/**/*.{ts,tsx}"],
       "env": { "browser": true },
       "rules": {

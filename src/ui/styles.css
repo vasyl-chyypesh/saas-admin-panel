@@ -724,3 +724,173 @@ fieldset.field legend {
 .link-list li .status {
   margin-left: auto;
 }
+
+/* Invoices. Statuses reuse the four status hues; overdue borrows the error red. */
+
+.status--draft,
+.status--cancelled {
+  --status-color: var(--status-churned);
+}
+
+.status--sent {
+  --status-color: var(--status-trial);
+}
+
+.status--processing {
+  --status-color: var(--status-suspended);
+}
+
+.status--paid {
+  --status-color: var(--status-active);
+}
+
+.status--overdue {
+  --status-color: var(--error-text);
+  color: var(--error-text);
+}
+
+/* Neutral pill, so test invoices are never mistaken for real ones. */
+.mode-badge {
+  padding: 0 0.45rem;
+  font-size: 0.92em;
+  font-weight: 500;
+  color: var(--muted);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+/* A heading with an action spans the same 40rem column as the list beneath it. */
+.section-title:has(.section-action) {
+  max-width: 40rem;
+}
+
+.section-title .section-action {
+  margin-left: auto;
+  font-size: 1rem;
+  text-decoration: none;
+}
+
+.invoice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.invoice-hint {
+  display: block;
+  margin: 0 0 1rem;
+}
+
+.button-danger {
+  padding: 0.25rem 0.75rem;
+  font: inherit;
+  font-weight: 500;
+  color: var(--error-text);
+  background: var(--error-bg);
+  border: 1px solid var(--error-text);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.button-link {
+  padding: 0.25rem 0.25rem;
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.button-link:hover:not(:disabled) {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.button-danger:disabled,
+.button-ghost:disabled,
+.button-link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pre-wrap {
+  white-space: pre-wrap;
+}
+
+td.wrap {
+  white-space: normal;
+}
+
+.invoice-lines {
+  max-width: 40rem;
+}
+
+.invoice-lines tfoot th {
+  font-weight: 400;
+  color: var(--muted);
+  text-align: right;
+}
+
+.invoice-lines tfoot td,
+.invoice-lines tfoot th {
+  border-bottom: 0;
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+}
+
+.invoice-lines .grand-total th,
+.invoice-lines .grand-total td {
+  font-weight: 600;
+  color: var(--text);
+  border-top: 1px solid var(--border);
+}
+
+/* Create form: line items as a grid of inputs */
+
+.form--wide {
+  max-width: 48rem;
+}
+
+.line-items {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.line-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5rem 8rem auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.line-item--head {
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.field-label {
+  font-weight: 500;
+}
+
+.invoice-total {
+  padding: 0.3rem 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .line-item {
+    grid-template-columns: minmax(0, 1fr) 4rem 6rem;
+  }
+
+  .line-item .button-link {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .line-item--head span:last-child {
+    display: none;
+  }
+}

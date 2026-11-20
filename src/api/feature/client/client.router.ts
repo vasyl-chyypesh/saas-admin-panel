@@ -1,79 +1,28 @@
 import { Router } from 'express';
-import { sendFieldError, sendNotFound, sendValidationError } from '../../lib/http.ts';
-import { getPlanById } from '../plan/plan.storage.ts';
+import { parseOrThrow } from '../../lib/http.ts';
 import {
   clientIdParamsSchema,
   listClientsQuerySchema,
   updateClientSchema,
 } from './client.schema.ts';
-import { getClientById, listClients, setClientPlan } from './client.storage.ts';
+import * as clientService from './client.service.ts';
 
+/** HTTP only: parse the request, call the service, shape the response. Errors go to `errorHandler`. */
 export const clientRouter: Router = Router();
 
 clientRouter.get('/', (req, res) => {
-  const query = listClientsQuerySchema.safeParse(req.query);
-  if (!query.success) {
-    sendValidationError(res, query.error);
-    return;
-  }
-
-  const data = listClients(query.data);
+  const query = parseOrThrow(listClientsQuerySchema, req.query);
+  const data = clientService.listClients(query);
   res.json({ data, total: data.length });
 });
 
 clientRouter.get('/:id', (req, res) => {
-  const params = clientIdParamsSchema.safeParse(req.params);
-  if (!params.success) {
-    sendValidationError(res, params.error);
-    return;
-  }
-
-  const client = getClientById(params.data.id);
-  if (!client) {
-    sendNotFound(res, 'Client not found');
-    return;
-  }
-
-  res.json({ data: client });
+  const { id } = parseOrThrow(clientIdParamsSchema, req.params);
+  res.json({ data: clientService.getClient(id) });
 });
 
 clientRouter.patch('/:id', (req, res) => {
-  const params = clientIdParamsSchema.safeParse(req.params);
-  if (!params.success) {
-    sendValidationError(res, params.error);
-    return;
-  }
-
-  const body = updateClientSchema.safeParse(req.body);
-  if (!body.success) {
-    sendValidationError(res, body.error);
-    return;
-  }
-
-  const client = getClientById(params.data.id);
-  if (!client) {
-    sendNotFound(res, 'Client not found');
-    return;
-  }
-
-  const { planId } = body.data;
-  // Re-sending the current plan is a no-op, which also lets a client keep an archived plan.
-  if (planId === client.planId) {
-    res.json({ data: client });
-    return;
-  }
-
-  if (planId !== null) {
-    const plan = getPlanById(planId);
-    if (!plan) {
-      sendFieldError(res, 400, 'planId', 'Plan not found');
-      return;
-    }
-    if (plan.archived) {
-      sendFieldError(res, 409, 'planId', `Plan "${plan.name}" is archived and cannot be attached`);
-      return;
-    }
-  }
-
-  res.json({ data: setClientPlan(client.id, planId) });
+  const { id } = parseOrThrow(clientIdParamsSchema, req.params);
+  const { planId } = parseOrThrow(updateClientSchema, req.body);
+  res.json({ data: clientService.setPlan(id, planId) });
 });

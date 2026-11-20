@@ -24,9 +24,11 @@ const planCodeSchema = z
   });
 const planNameSchema = z.string().trim().min(1).max(60);
 const planDescriptionSchema = z.string().trim().max(500);
-const currencySchema = z.string().regex(/^[A-Z]{3}$/, {
-  message: 'Use a three-letter ISO 4217 code, e.g. USD',
-});
+/**
+ * Plans are invoiced through Oncade, which bills in USD only, so a plan in any other currency
+ * could never be invoiced. See `src/api/feature/invoice/oncade-invoices.md`.
+ */
+const currencySchema = z.literal('USD', { message: 'Only USD is supported' });
 
 export const planSchema = z.object({
   id: z.uuid(),
@@ -68,10 +70,9 @@ export const createPlanSchema = z.strictObject({
 });
 
 /**
- * `PATCH /api/plans/:id`. Every field is optional, but the router rejects an empty body. `prices` is
- * replaced as a whole. `code` is deliberately absent, because it cannot change. Prices are stored
- * in the currency's minor unit with no scale of their own, so a new `currency` must come with
- * `prices`; otherwise $49.00 (4900) would silently become ¥4,900.
+ * `PATCH /api/plans/:id`. Every field is optional, but an empty body is a 400. `prices` is replaced
+ * as a whole. `code` is deliberately absent, because it cannot change. `currency` is accepted so the
+ * form can send the whole draft, but it can only be `USD`, so it never changes.
  */
 export const updatePlanSchema = z
   .strictObject({
@@ -81,9 +82,12 @@ export const updatePlanSchema = z
     prices: planPricesSchema.optional(),
     archived: z.boolean().optional(),
   })
-  .refine((body) => body.currency === undefined || body.prices !== undefined, {
-    path: ['prices'],
-    message: 'Send prices when changing currency',
+  // No `path`, so the message lands in the response's `message` rather than in `details`. `when`
+  // keeps it to otherwise valid bodies: an unknown key is a continuable issue, so without it
+  // `{ "code": "x" }` would get this message on top of "Unrecognized key".
+  .refine((changes) => Object.keys(changes).length > 0, {
+    message: 'Request body must include at least one field to update',
+    when: (payload) => payload.issues.length === 0,
   });
 
 export type Plan = z.infer<typeof planSchema>;

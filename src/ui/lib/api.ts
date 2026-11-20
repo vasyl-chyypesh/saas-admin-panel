@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 /** Per-field messages from a 400/409 body (`details`), keyed by the request field name. */
 export type FieldErrors = Partial<Record<string, string[]>>;
@@ -58,12 +58,31 @@ export const fetchJson = <T>(url: string, signal?: AbortSignal): Promise<T> =>
   request<T>(url, { headers: { Accept: 'application/json' }, ...(signal && { signal }) });
 
 /** Sends `body` as JSON and returns the parsed response; failures throw `ApiError`. */
-export const sendJson = <T>(method: 'POST' | 'PATCH', url: string, body: unknown): Promise<T> =>
+export const sendJson = <T>(
+  method: 'POST' | 'PATCH',
+  url: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<T> =>
   request<T>(url, {
     method,
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
+
+/**
+ * A v4 UUID for the `Idempotency-Key` header. `crypto.randomUUID` exists only in secure contexts
+ * (https or localhost), so plain-HTTP access over a LAN falls back to `getRandomValues`, which is
+ * available everywhere.
+ */
+export const newIdempotencyKey = (): string => {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = ((bytes[6] ?? 0) & 0x0f) | 0x40;
+  bytes[8] = ((bytes[8] ?? 0) & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
 
 export interface FetchState<T> {
   /** Last successful payload. Kept while a new URL loads so lists don't flash empty. */
@@ -75,6 +94,8 @@ export interface FetchState<T> {
    * Ignored if the URL has changed since, so a late write can't clobber the new URL's result.
    */
   mutate: (data: T) => void;
+  /** Fetches the current URL again, keeping the shown data until the new result arrives. */
+  reload: () => void;
 }
 
 interface Settled<T> {
@@ -91,24 +112,32 @@ export const useFetchJson = <T>(url: string): FetchState<T> => {
     data: undefined,
     error: undefined,
   });
+  /** Bumped by `reload`, giving a new `fetchKey` object for the same URL, so the effect re-runs. */
+  const [generation, setGeneration] = useState(0);
+  const fetchKey = useMemo(() => ({ url, generation }), [url, generation]);
 
   useEffect(() => {
     const controller = new AbortController();
+    const requestUrl = fetchKey.url;
 
-    fetchJson<T>(url, controller.signal).then(
+    fetchJson<T>(requestUrl, controller.signal).then(
       (data) => {
-        if (!controller.signal.aborted) setSettled({ url, data, error: undefined });
+        if (!controller.signal.aborted) setSettled({ url: requestUrl, data, error: undefined });
       },
       (err: unknown) => {
         if (controller.signal.aborted) return;
-        setSettled({ url, data: undefined, error: toApiError(err) });
+        setSettled({ url: requestUrl, data: undefined, error: toApiError(err) });
       },
     );
 
     return () => {
       controller.abort();
     };
-  }, [url]);
+  }, [fetchKey]);
+
+  const reload = useCallback(() => {
+    setGeneration((n) => n + 1);
+  }, []);
 
   const mutate = useCallback(
     (data: T) => {
@@ -124,5 +153,6 @@ export const useFetchJson = <T>(url: string): FetchState<T> => {
     error: current ? settled.error : undefined,
     loading: !current,
     mutate,
+    reload,
   };
 };

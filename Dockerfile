@@ -34,8 +34,8 @@ COPY package.json ./
 USER node
 EXPOSE 3000
 
-# ADMIN_PASS is intentionally not baked in; pass it at run time:
-#   docker run -e ADMIN_PASS=... -p 3000:3000 saas-admin-panel
+# No secrets are baked in. Oncade is optional; pass its variables at run time:
+#   docker run -e ONCADE_API_KEY=... -e ONCADE_BUSINESS_ID=... -p 3000:3000 saas-admin-panel
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/health').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"
 

@@ -34,7 +34,12 @@ scoping the override to the `@typescript-eslint/*` packages still leaves npm rej
 conflict. oxlint parses TypeScript itself and declares no `typescript` peer at all, so the latest
 compiler and a working linter coexist. (Upstream: `typescript-eslint#10940`, targeting TS ≥ 7.1.)
 
-Two rules are switched off in `.oxlintrc.json` for real reasons, not to paper over findings:
+These rules are switched off or narrowed in `.oxlintrc.json` for real reasons, not to paper over
+findings:
+
+- `oxc/no-async-endpoint-handlers`, scoped to `src/api` — the rule assumes Express 4. Express 5
+  forwards a rejected promise from an async handler to `errorHandler`, so async handlers are safe.
+- `no-underscore-dangle` allows `_id`, scoped to `src/api` — it is Oncade's field name.
 
 - `react/react-in-jsx-scope` — the project uses the modern automatic JSX transform
   (`jsx: react-jsx`), so `React` need not be in scope.
@@ -58,15 +63,18 @@ Middleware order is load-bearing — `createApp()` registers, in sequence:
    loading a third-party origin (fonts, analytics, an API), add it to the matching CSP directive here.
 2. `express.json()` — request body parsing
 3. `/api` → `apiRouter` (`src/api/routes/index.ts`, mounts `health` at `/api/health` and the
-   feature routers at `/api/clients` and `/api/plans`)
+   feature routers at `/api/clients`, `/api/plans` and `/api/invoices`)
 4. `/api` → `notFoundHandler` again, so an unknown `/api/*` path returns **JSON 404** instead of
    falling through and being answered with the SPA's HTML
 5. `express.static(config.uiDir, { index: false })` — hashed assets from `dist/ui`
 6. `spaFallback` — GET/HEAD only, serves `dist/ui/index.html` so client-side routes work
 7. `notFoundHandler` — anything left (e.g. a POST to an unknown path) is a JSON 404
-8. `errorHandler` — must keep all four params; Express detects error handlers by arity. Errors
-   carrying a 4xx `status` (malformed JSON → 400, oversized body → 413 from `express.json()`) are
-   answered with that status and a fixed message; everything else is a 500
+8. `errorHandler` — must keep all four params; Express detects error handlers by arity. It first
+   answers the expected errors that routes and services throw (`RequestValidationError` → 400,
+   `AppError` → its kind's status; see Feature modules). That check must stay **before** the next
+   one: errors carrying a 4xx `status` (malformed JSON → 400, oversized body → 413 from
+   `express.json()`) are answered with that status and a fixed message, which would swallow the
+   message of any other error that happened to have a `status`. Everything else is a 500
 
 The production image sets `NODE_ENV=production`, so its CSP includes `upgrade-insecure-requests`.
 That is correct behind TLS. Over plain HTTP it breaks the page wherever the browser upgrades the
@@ -79,10 +87,39 @@ HTTP, run it with `-e NODE_ENV=development`.
 
 ### Feature modules (`src/api/feature/<name>/`)
 
-Each feature folder holds `<name>.router.ts` (Express router), `<name>.schema.ts` (zod schemas and
-the `z.infer` types) and `<name>.storage.ts` (data access). Storage is an in-memory mock array, run
-through the record schema at import so bad mock data fails at boot. Writes replace records in that
-array, so they last until the process restarts.
+Each feature folder holds:
+
+- `<name>.router.ts` — **HTTP only**: parse params, query, body and headers with `parseOrThrow`,
+  call the service, choose the status and response shape. No business rules, no `try/catch`.
+- `<name>.service.ts` — the **business rules**. Plain exported functions that take parsed values
+  and return records, or throw `AppError`. They never import express.
+- `<name>.schema.ts` — zod schemas and the `z.infer` types.
+- `<name>.storage.ts` — data access. Storage is an in-memory mock array, run through the record
+  schema at import so bad mock data fails at boot. Writes replace records in that array, so they
+  last until the process restarts. The invoice feature has `invoice.oncade.ts` in its place.
+
+Imports run one way: a router imports only its own service; a service imports its own storage (or
+Oncade client) and **other features' services**, never their storage. Routers import services as a
+namespace (`import * as planService from './plan.service.ts'`), because a service and its storage
+often share function names. Services expose `getX` (throws `not-found`) for the feature's own
+routes and `findX` (returns `undefined`) for other features, which decide what a missing reference
+means to them (an unknown `planId` in a client PATCH is a 400, not a 404). The one exception to the
+import rule is `client.storage.ts` → `plan.storage.ts`, the boot check on mock data.
+
+Expected failures are **thrown**, and Express 5 forwards them from sync and async handlers alike to
+`errorHandler`. Both classes live in `src/api/lib/errors.ts`:
+
+- `parseOrThrow(schema, value)` throws `RequestValidationError` → `sendValidationError`.
+- Services throw `AppError(kind, message, { field? })`, which `sendAppError` answers with:
+  - `invalid` → 400
+  - `not-found` → 404, with no `details`
+  - `conflict` → 409
+  - `rejected` → 422
+  - `upstream` → 502
+  - `unavailable` → 503
+
+  With a `field`, a 400 or 409 also gets `details: { [field]: [message] }`. `AppError`
+  deliberately has no `status` property; see `errorHandler` above.
 
 Shared response helpers live in `src/api/lib/http.ts`. Bad input → 400
 `{ error, message?, details: fieldErrors }`. `message` is there only for errors on the whole body,
@@ -99,24 +136,66 @@ unknown id → 404.
   cheapest monthly first, custom pricing last). `GET /api/plans/:id`. `POST /api/plans` → 201.
   `PATCH /api/plans/:id` (partial; an empty body → 400; `prices` is replaced whole). Prices are
   **integers in the currency's minor unit** (cents), with `null` meaning custom/contact-sales;
-  both prices are set or both are `null`. A `PATCH` that changes `currency` must also send `prices`,
-  since the stored integers have no scale of their own.
+  both prices are set or both are `null`. `currency` must be `USD`, because plans are invoiced
+  through Oncade, which bills in USD only (`src/api/feature/invoice/oncade-invoices.md`).
   `code` (`lite`, `pro`, …) is unique (duplicate → 409) and cannot change after creation. Plans are
   never deleted; `archived: true` keeps them on existing clients but blocks new attachments.
-  `client.storage.ts` imports plan storage to check mock `planId`s at boot, so the dependency runs
-  client → plan only.
+  `client.service.ts` uses `plan.service.ts` to vet a `planId`, and `client.storage.ts` imports plan
+  storage to check mock `planId`s at boot, so the dependency runs client → plan only. An empty
+  PATCH body is rejected by a `.refine` on `updatePlanSchema`, whose `when` keeps it from piling
+  onto an "Unrecognized key" error.
+- **`invoice`** (phase 1, design notes in `src/api/feature/invoice/oncade-invoices.md`): there is
+  **no storage file**, because **Oncade is the source of truth**. `invoice.oncade.ts` is the
+  outbound client: native `fetch`, 15 s timeout, `redirect: 'error'`, and a lenient
+  `z.looseObject` parse, since Oncade documents its response only partly. Only `_id` and `status`
+  are required. Every failure becomes an `OncadeError` with a `kind`. `invoice.service.ts` turns
+  those into `AppError`s (in `callOncade`), looks up the client for a new invoice, filters and sorts
+  lists, and owns the refetch-after-send/cancel rule. Each invoice we create carries
+  `externalMetadata { source, clientId, planId }`; per-client lists fetch Oncade's list (up to 10
+  pages of 100) and filter on it. Money is **cents in our API**, converted to Oncade's dollars only
+  in `invoice.oncade.ts`.
+  - `GET /api/invoices/config` → `{ data: { configured, environment } }`. It always works. Every
+    other route answers **503** when `config.oncade` is unset; that check runs before validation.
+    It is the `requireOncade` middleware added to each route, not `invoiceRouter.use()`, which
+    would also turn unknown paths under `/api/invoices` into 503s instead of 404s.
+  - `GET /api/invoices?status=&clientId=` → `{ data, total }`, newest first.
+  - `GET /api/invoices/:id` → `{ data }`. Ids must match `[A-Za-z0-9_-]{1,64}`, because they go
+    into the outbound URL.
+  - `POST /api/invoices` → 201. It always creates a **draft**: nothing is emailed until the invoice
+    is sent.
+  - `POST /api/invoices/:id/send` and `POST /api/invoices/:id/cancel` → `{ data }`, re-fetched.
+  - All three writes **require an `Idempotency-Key` UUID header**, which is forwarded to Oncade.
+  - **The recipient always comes from the client record** (`company`, `email`), never from the
+    body, so the open endpoint cannot email arbitrary addresses.
+  - **Send and cancel count as done once Oncade accepts the POST.** If the follow-up re-fetch
+    fails, the route still answers 200 with `{ data: null, message }`, and the UI calls the hook's
+    `reload()`. Answering with an error would make the admin retry, then likely cancel and recreate,
+    emailing the client twice. After a failed action the UI also reloads, so it shows Oncade's real
+    status.
+  - The open reads return **every** invoice of the Oncade business, including ones made in the
+    Oncade dashboard for people who aren't clients here. Put them behind auth first when it lands.
+  - Drafts are deliberately **not editable**: Oncade fixes fees at creation, so the UI says to cancel
+    and recreate.
+  - Oncade failures map as follows: other 4xx → **422** with Oncade's message; 401, 403, 5xx,
+    network failure or an unparseable body → **502**; 404 → 404 "Invoice not found". The mapping
+    is `toAppError` in `invoice.service.ts`.
 
 **The write endpoints have no auth.** This was a deliberate decision: they stay open until an
 auth layer is built, and that work should put them behind it.
 
-The UI imports the API's types with `import type` from `client.schema.ts`. This keeps one source of
+The UI imports the API's types with `import type` from the `*.schema.ts` files. This keeps one source of
 truth, and the import is erased at build so zod never reaches the bundle. Never turn it into a value
 import.
 
 ### Config (`src/api/config.ts`)
 
-`ADMIN_PASS` is validated at import time and **throws if unset or empty**, so the server refuses to
-boot without it. Nothing consumes it yet — no auth middleware exists; it is a deliberate placeholder.
+No variable is required: the server boots with an empty environment. There is no auth yet, and no
+auth secret in config either; the old `ADMIN_PASS` placeholder was dropped on purpose, so the auth
+work will add whatever it needs. `config.oncade` is **optional**: it is `undefined` when `ONCADE_API_KEY` and `ONCADE_BUSINESS_ID`
+are both unset or blank, so the server boots without Oncade. Setting only one of them, a key without
+the `oncade_platform_test_`/`oncade_platform_live_` prefix (the prefix sets `environment`), or a
+non-https `ONCADE_API_URL` (default `https://www.oncade.gg`) throws at boot. The invoice module
+answers 503 "Oncade is not configured" when it is `undefined`. Never log `config` whole: it holds the API key.
 `uiDir` resolves against `process.cwd()`, which is why `npm start` must run from the repo root
 (and why the Docker image sets `WORKDIR /app`). Override with `UI_DIST_DIR`.
 
@@ -142,14 +221,20 @@ Vite's `root` is `src/ui`, so `build.outDir` is written as `../../dist/ui` (rela
 `index.html` references `/main.tsx`. React 19 ships no bundled types; `@types/react` is a real dependency.
 
 Routing is **react-router v8 in declarative mode** (`BrowserRouter` in `main.tsx`, `<Routes>` in
-`App.tsx`): `/` redirects to `/clients`, then `/clients`, `/clients/:id`, `/plans`, `/plans/new` and
-`/plans/:id` (the plan edit form, plus the clients on that plan). Deep links work in
+`App.tsx`): `/` redirects to `/clients`, then `/clients`, `/clients/:id` (with its invoices),
+`/clients/:id/invoices/new` (form prefilled from the client's plan), `/plans`, `/plans/new`,
+`/plans/:id` (the plan edit form, plus the clients on that plan), `/invoices` and `/invoices/:id`
+(Send and Cancel, each a two-click confirm whose second step ignores the second click of a
+double-click). Deep links work in
 production because of Express's `spaFallback`. Pages live in `src/ui/feature/<name>/`. Data is
 loaded with `useFetchJson` (`src/ui/lib/api.ts`), which aborts superseded requests and keeps the
 previous data while a new URL loads. Writes go through `sendJson`; pages feed the returned record
 into the hook's `mutate` instead of refetching. A failed request throws `ApiError`, whose `details`
-holds the API's per-field messages for inline form errors. Plan prices are typed in major units and
-converted to minor units by string parsing, not `* 100`, so 19.99 stays exactly 1999. Page titles use React 19's hoisted `<title>` element.
+holds the API's per-field messages for inline form errors. Prices (plans and invoice lines) are
+typed in major units and converted to minor units by string parsing in `src/ui/lib/money.ts`, not
+`* 100`, so 19.99 stays exactly 1999. `sendJson` takes extra headers; invoice writes pass
+`newIdempotencyKey()`, which falls back to `getRandomValues` where `crypto.randomUUID` is missing
+(plain-HTTP LAN access). Page titles use React 19's hoisted `<title>` element.
 
 The router wraps location updates in `startTransition` by default, so **never bind a text
 `<input>`'s `value` straight to `useSearchParams`**: keystrokes get dropped. `ClientListPage` keeps
@@ -163,11 +248,13 @@ Single multi-stage `Dockerfile` → one container serving API and UI on :3000 (~
 `deps` (full install) → `build` (npm run build) → `prod-deps` (`npm ci --omit=dev`) → `runner`,
 which copies only `dist/` plus production `node_modules` and runs as the `node` user.
 
-`ADMIN_PASS` is **not** baked into the image; the container exits at boot without it:
+No secrets are baked into the image. The Oncade variables are passed at run time; without them the
+container boots and the invoice routes answer 503:
 
 ```
 docker build -t saas-admin-panel .
-docker run -e ADMIN_PASS=secret -p 3000:3000 saas-admin-panel
+docker run -p 3000:3000 saas-admin-panel
+docker run -e ONCADE_API_KEY=... -e ONCADE_BUSINESS_ID=... -p 3000:3000 saas-admin-panel
 ```
 
 `HEALTHCHECK` polls `/api/health` with `node -e fetch(...)` — no curl in the Alpine image.
