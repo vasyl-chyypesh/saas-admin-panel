@@ -4,6 +4,8 @@ A test project: a micro SaaS admin panel with an Express 5 JSON API and a React 
 package (no workspaces, one lockfile). In production Express serves the built UI, so the whole app
 is one process on one port.
 
+![Walkthrough: the Plans list, the Clients list filtered to Active, a client's detail page, and the Invoices list](saas-admin.gif)
+
 ## Prerequisites
 
 - **Node.js 26 or newer**, the same as the Docker image. The dev server runs the TypeScript sources
