@@ -22,6 +22,9 @@ lib-cov
 coverage
 *.lcov
 
+# Bearer security scan report (npm run scan:security:report)
+scan-report.html
+
 # nyc test coverage
 .nyc_output
 

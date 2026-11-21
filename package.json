@@ -32,7 +32,9 @@
     "lint:fix": "oxlint --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "update:deps": "npx npm-check-updates"
+    "scan:security": "docker run --rm -v \"$(pwd)\":/tmp/scan:ro bearer/bearer:2.1.3 scan /tmp/scan --skip-path .env,.env.*,scan-report.html --severity critical,high,medium",
+    "scan:security:report": "docker run --rm -v \"$(pwd)\":/tmp/scan bearer/bearer:2.1.3 scan /tmp/scan --skip-path .env,.env.*,scan-report.html --format html --output /tmp/scan/scan-report.html",
+    "check:deps": "npx npm-check-updates"
   },
   "dependencies": {
     "@fontsource-variable/inter": "5.3.0",

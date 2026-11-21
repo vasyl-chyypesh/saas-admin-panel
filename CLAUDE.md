@@ -14,6 +14,8 @@ production Express serves the built UI, so the app is one process on :3000.
 - `npm run dev`: API on :3000 (`node --watch`) + Vite on :5173 proxying `/api` (POSIX shells only)
 - `npm test`: all API tests. One file: `node --test test/api/plans.api.test.ts`
 - `npm run typecheck` (api, ui and test tsconfigs) · `npm run lint` (oxlint) · `npm run format:check`
+- `npm run scan:security`: Bearer SAST in Docker, same severities as CI · `npm run check:deps`:
+  list outdated deps (read-only)
 - Prettier runs automatically after every Write/Edit (PostToolUse hook in `.claude/settings.json`).
 
 ## Rules that apply everywhere

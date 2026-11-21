@@ -12,7 +12,7 @@ is one process on one port.
   directly through Node's built-in type stripping.
 - npm (comes with Node).
 - A POSIX shell (macOS, Linux, WSL, Git Bash) for `npm run dev`. On plain Windows, see below.
-- Optional: Docker, to build the production image.
+- Optional: Docker, to build the production image and to run the Bearer security scan.
 
 ## Quick start
 
@@ -80,7 +80,13 @@ template.
 | `npm run typecheck`               | `tsc --noEmit` over the api, ui and test tsconfigs                 |
 | `npm run lint` / `lint:fix`       | oxlint                                                             |
 | `npm run format` / `format:check` | Prettier                                                           |
-| `npm run update:deps`             | `npx npm-check-updates`                                            |
+| `npm run check:deps`              | `npx npm-check-updates`: lists newer versions, changes nothing     |
+| `npm run scan:security`           | Bearer SAST scan in Docker (critical, high, medium), same as CI    |
+| `npm run scan:security:report`    | Bearer scan of all severities as HTML in `scan-report.html`        |
+
+The scan scripts pin the `bearer/bearer` image to a fixed version, because the container sees the
+whole repo, `.env` included. Bump the tag in `package.json` on purpose, never to `latest`. Both
+skip `.env` files, and `scan-report.html` is git- and Prettier-ignored.
 
 ### Running the production build locally
 
@@ -153,10 +159,13 @@ node --test test/api/plans.api.test.ts       # one file
 npm run test:coverage                        # + coverage/index.html
 ```
 
-There is no CI yet. Before pushing, run:
+CI (`.github/workflows/ci.yml`) runs on pushes and pull requests to `main`: `npm audit`
+(high and above), typecheck, build, lint, format check, tests with coverage, and a Bearer security
+scan. To catch failures before pushing, run:
 
 ```sh
 npm run typecheck && npm run lint && npm run format:check && npm test
+npm run scan:security   # needs Docker
 ```
 
 ## Docker
