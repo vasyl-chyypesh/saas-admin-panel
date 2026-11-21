@@ -21,7 +21,8 @@ export const spaFallback = (req: Request, res: Response, next: NextFunction): vo
     return;
   }
 
-  res.sendFile(indexFile, (err) => {
+  // A fixed name under `root`: Express refuses to send anything outside the UI directory.
+  res.sendFile('index.html', { root: config.uiDir }, (err) => {
     if (err) next(err);
   });
 };

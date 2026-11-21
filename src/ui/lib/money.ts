@@ -45,8 +45,8 @@ export const toAmountInput = (amount: number | null, currency: string): string =
 export const parseAmount = (raw: string, currency: string): number | undefined => {
   const digits = minorUnitDigits(currency);
   const value = raw.trim();
-  const pattern = digits === 0 ? /^\d+$/ : new RegExp(`^\\d+(?:\\.\\d{1,${digits}})?$`);
-  if (!pattern.test(value)) return undefined;
+  if (!/^\d+(?:\.\d+)?$/.test(value)) return undefined;
   const [whole = '0', fraction = ''] = value.split('.');
+  if (fraction.length > digits) return undefined;
   return Number(whole) * 10 ** digits + Number(fraction.padEnd(digits, '0') || '0');
 };
