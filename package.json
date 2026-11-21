@@ -15,7 +15,7 @@
   "type": "module",
   "private": true,
   "engines": {
-    "node": ">=22.6.0"
+    "node": ">=26.0.0"
   },
   "scripts": {
     "dev": "npm run dev:api & npm run dev:ui",
