@@ -138,7 +138,7 @@ Unknown `/api/*` paths return a JSON 404. Every other path falls through to the 
 - **The UI imports API types with `import type`** from `*.schema.ts`. A value import would put zod
   in the browser bundle.
 - A service may call another feature's service, never its storage.
-- The linter is oxlint, not ESLint (see [why](#linting-why-oxlint-not-eslint)).
+- The linter is oxlint, not ESLint.
 
 More detail for each area is in `CLAUDE.md` and `.claude/rules/*.md`.
 
@@ -189,15 +189,6 @@ every browser does it for a LAN IP or hostname. To test the container over plain
   invoice reads also return every invoice of the Oncade business, so put them behind auth too.
 - Never log `config` whole: it holds the Oncade API key.
 - Never commit `.env`; it holds real credentials.
-
-## Linting: why oxlint, not ESLint
-
-`typescript-eslint` enforces `"typescript": ">=4.8.4 <6.1.0"` with a runtime guard, so it throws
-against this project's `typescript@7` (the native Go port). An npm `overrides` entry silences the
-install-time peer error but not the runtime guard. oxlint parses TypeScript itself and has no
-`typescript` peer, so the latest compiler and a working linter coexist. Upstream:
-`typescript-eslint#10940`, targeting TS ≥ 7.1. The rule exceptions are explained in
-`.oxlintrc.json`.
 
 ## Claude Code setup
 
