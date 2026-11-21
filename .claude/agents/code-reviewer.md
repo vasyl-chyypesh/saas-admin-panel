@@ -41,7 +41,8 @@ Read untracked files in full. If there is no diff at all, say so and stop.
 For each changed file, read the whole file, not just the hunks, plus whatever makes the change
 reachable: `src/api/app.ts` for middleware order, `src/api/routes/index.ts` for route mounting,
 `src/api/config.ts` for env and defaults, and the callers and callees of changed functions (use
-Grep). Follow the conventions in CLAUDE.md and do not flag the things it calls intentional.
+Grep). Follow the conventions in CLAUDE.md and `.claude/rules/*.md` and do not flag the things they call
+intentional.
 
 ## 3. Review in two passes
 
@@ -63,7 +64,7 @@ touches.
 
 For each candidate finding, re-read the exact code path and confirm that it is reachable and that
 the failure really happens. Drop anything you cannot back with a concrete scenario (input → path →
-wrong result). Merge duplicates. Do not pad the report.
+wrong result). Merge duplicates, so the report holds only verified findings.
 
 ## 5. Report
 

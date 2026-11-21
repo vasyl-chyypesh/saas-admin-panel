@@ -7,6 +7,7 @@
   },
   "ignorePatterns": ["dist/**", "node_modules/**", "coverage/**"],
   "rules": {
+    // The project uses the automatic JSX transform (`jsx: react-jsx`), so React need not be in scope.
     "react/react-in-jsx-scope": "off"
   },
   "overrides": [
@@ -17,7 +18,10 @@
     {
       "files": ["src/api/**/*.ts", "test/**/*.ts"],
       "rules": {
+        // The rule assumes Express 4. Express 5 forwards a rejected promise from an async handler
+        // to errorHandler, so async handlers are safe.
         "oxc/no-async-endpoint-handlers": "off",
+        // `_id` is Oncade's field name.
         "no-underscore-dangle": ["warn", { "allow": ["_id"] }]
       }
     },
@@ -25,6 +29,7 @@
       "files": ["src/ui/**/*.{ts,tsx}"],
       "env": { "browser": true },
       "rules": {
+        // `import './styles.css'` is a deliberate Vite side-effect import.
         "import/no-unassigned-import": "off"
       }
     }

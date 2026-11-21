@@ -3,7 +3,7 @@
 // Exit 2 blocks the tool call and feeds stderr back to Claude; exit 0 allows it.
 // This is a guardrail against accidental access, not a security boundary: text
 // matching on Bash commands cannot catch a script that builds the path at runtime.
-// See the "Secrets" section of CLAUDE.md.
+// See "Claude Code setup" in README.md.
 
 import { realpathSync } from 'node:fs';
 import { basename, resolve } from 'node:path';

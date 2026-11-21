@@ -1,7 +1,7 @@
 # Oncade platform invoices
 
 Research and design notes for invoicing through Oncade's Platform API. **Phase 1 is implemented**
-(see "Phases" in §11 and the `invoice` module in `CLAUDE.md`). Phases 2 and 3 are not.
+(see "Phases" in §11 and `.claude/rules/invoices.md`). Phases 2 and 3 are not.
 
 Explored on 2026-11-20 from:
 

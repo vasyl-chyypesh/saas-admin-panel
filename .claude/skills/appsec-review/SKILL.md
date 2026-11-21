@@ -3,6 +3,9 @@ name: appsec-review
 description: Security checklist for reviewing code changes in this Express 5 + React 19 app — injection, authn/authz, secrets, error leakage, XSS, middleware order, headers/CORS, Docker and dependencies. Use when reviewing a diff, branch or PR for security issues.
 ---
 
+<!-- Keep the name: `security-review` and `code-review` are built-in skills. Do not add
+`disable-model-invocation: true`: the code-reviewer subagent preloads this skill. -->
+
 # Application security review
 
 Use this checklist to review a **change** (a diff, branch or PR), not to audit the whole repo.
@@ -24,8 +27,7 @@ Use this checklist to review a **change** (a diff, branch or PR), not to audit t
   `src/api/app.ts` is load-bearing: `helmet()` → `express.json()` → `apiRouter` → `/api` JSON 404 → `express.static(dist/ui)` →
   `spaFallback` → `notFoundHandler` → `errorHandler`.
 - Routes are mounted in `src/api/routes/index.ts`. Any router added there is public: **there is no
-  auth middleware yet**, and no auth secret in `src/api/config.ts` (the old `ADMIN_PASS`
-  placeholder was dropped on purpose).
+  auth middleware yet**, and no auth secret in `src/api/config.ts`.
 - `config.oncade` (`src/api/config.ts`) holds the optional Oncade platform API key and business ID
   (`undefined` when both are unset). Only the invoice module (`invoice.service.ts`, `invoice.oncade.ts`) uses it. The key is a server-side secret: it
   must never reach the UI bundle, a response body, a log line or an error message.
@@ -100,7 +102,8 @@ Use this checklist to review a **change** (a diff, branch or PR), not to audit t
 - Hard-coded credentials, API keys or tokens in source, tests, Dockerfile or config.
 - Logging secrets or entire `process.env` / `config` objects, or putting secrets in error messages.
 - New **fail-open defaults**: an env var whose fallback is the insecure option (the
-  `NODE_ENV ?? 'development'` pattern). Required secrets should go through `requireEnv`.
+  `NODE_ENV ?? 'development'` pattern). A required secret must fail at boot when it is missing,
+  the way `src/api/config.ts` throws on a half-set Oncade pair, rather than fall back to a default.
 - Secrets that reach the client bundle: any value exposed through Vite (`import.meta.env.VITE_*`)
   ships to every browser.
 - Changes that loosen the `.env` guardrails in `.claude/settings.json` or `.claude/hooks/`.
